@@ -1,7 +1,7 @@
 .pragma library
 
-// Helpers puros del Timer: sin estado, solo formato y validacion.
-// Se importa como `import "TimerLogic.js" as Logic`.
+// Pure Timer helpers: stateless, only formatting and validation.
+// Imported as `import "TimerLogic.js" as Logic`.
 var _uidCounter = 0;
 
 function clampMinutes(m) {
@@ -53,7 +53,7 @@ function defaultPresets() {
   ];
 }
 
-// Normaliza lo leido del JSON: solo entradas validas {id,label,minutes}.
+// Normalize what is read from JSON: only valid {id,label,minutes} entries.
 function cleanPresets(raw) {
   var list = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.presets) ? raw.presets : []);
   var out = [];

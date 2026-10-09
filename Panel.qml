@@ -7,8 +7,8 @@ import qs.Commons
 import qs.Ui
 import "TimerLogic.js" as Logic
 
-// Panel de configuracion del Timer: presets, picker manual, +5/-5,
-// editor de presets (persisten en JSON) y modo flotante.
+// Timer configuration Panel: presets, manual picker, +5/-5,
+// preset editor (persisted in JSON) and floating mode.
 Panel {
   id: root
   moduleName: "nickmdrummer.timer"
@@ -30,7 +30,7 @@ Panel {
   property string editLabel: ""
   property int editMinutes: 10
 
-  // Picker manual (segundos). Se sincroniza al abrir.
+  // Manual picker (seconds). Synced on open.
   property int pickSec: 600
 
   function open() {
@@ -119,7 +119,7 @@ Panel {
         width: parent.width
         spacing: Style.space(12)
 
-        // ---- cabecera ------------------------------------------------
+        // ---- header ------------------------------------------------
         Row {
           width: parent.width
           height: Style.space(24)
@@ -154,7 +154,7 @@ Panel {
           }
         }
 
-        // ---- tiempo grande + progreso + latido ---------------------------
+        // ---- big time + progress + heartbeat ---------------------------
         Rectangle {
           id: timeCard
           width: parent.width
@@ -164,7 +164,7 @@ Panel {
           border.width: 0
           border.color: "transparent"
 
-          // Destello verde del latido (ultimos 5 s).
+          // Green heartbeat flash (last 5 s).
           Rectangle {
             id: beatFlash
             anchors.fill: parent
@@ -217,7 +217,7 @@ Panel {
             }
           }
 
-          // Barra de progreso fina abajo.
+          // Thin progress bar at the bottom.
           Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -240,8 +240,8 @@ Panel {
           }
         }
 
-        // ---- transporte ----------------------------------------------
-        // Anchos exactos: 2 grandes + 2 chicos de 46 + 3 gaps de 8 = width.
+        // ---- transport ----------------------------------------------
+        // Exact widths: 2 large + 2 small of 46 + 3 gaps of 8 = width.
         Row {
           width: parent.width
           spacing: Style.space(8)
@@ -383,7 +383,7 @@ Panel {
           }
         }
 
-        // Editor del preset seleccionado.
+        // Selected preset editor.
         Column {
           width: parent.width
           spacing: Style.space(8)
@@ -460,7 +460,7 @@ Panel {
           }
         }
 
-        // Nuevo preset.
+        // New preset.
         Column {
           width: parent.width
           spacing: Style.space(8)
@@ -548,7 +548,7 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
-        // ---- ajuste manual ---------------------------------------------
+        // ---- manual tune ---------------------------------------------
         Text {
           width: parent.width
           text: "MANUAL TUNE"
@@ -618,7 +618,7 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
-        // ---- pie: sonido + flotante --------------------------------------
+        // ---- footer: sound + floating --------------------------------------
         Row {
           width: parent.width
           spacing: Style.space(16)
@@ -662,7 +662,7 @@ Panel {
     }
   }
 
-  // ---- piezas reutilizables ---------------------------------------------
+  // ---- reusable pieces ---------------------------------------------
   component TimerButton: Rectangle {
     id: tbtn
     property string label: ""

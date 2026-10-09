@@ -52,9 +52,9 @@ PanelWindow {
   property bool popoutSwitching: false
   property bool popoutSwitchClosing: false
   property bool focusPrimed: false
-  // Radio propio: el redondeo del sistema puede ser 0 y queremos el popup
-  // siempre redondeado. Color glass por defecto para que el blur del
-  // compositor se note.
+  // Own radius: the system rounding may be 0 and we want the popup
+  // always rounded. Default glass color so the compositor blur
+  // shows through.
   property int cardRadius: 20
   property color cardColor: Qt.rgba(0, 0, 0, 0.5)
 

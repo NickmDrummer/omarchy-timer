@@ -5,15 +5,15 @@ import qs.Commons
 import qs.Ui
 import "TimerLogic.js" as Logic
 
-// Timer — pildora de cuenta regresiva en la barra.
-// El estado vive aqui (fuente de verdad) y se sincroniza entre monitores
-// mediante un archivo de estado en XDG_RUNTIME_DIR. El Panel y la ventana
-// flotante leen y actuan a traves de hostWidget.
+// Timer — countdown pill in the bar.
+// State lives here (source of truth) and syncs across monitors
+// via a state file in XDG_RUNTIME_DIR. The Panel and the floating
+// window read and act through hostWidget.
 BarWidget {
   id: root
   moduleName: "nickmdrummer.timer"
 
-  // ---- estado -----------------------------------------------------------
+  // ---- state ------------------------------------------------------------
   // idle | running | paused | finished
   property string tState: "idle"
   property int totalSec: 600
@@ -21,20 +21,20 @@ BarWidget {
   property double endAt: 0
   property int stagedSec: 600
   property bool detached: false
-  // Pantalla dueña del flotante: solo esa instancia lo muestra (uno solo).
+  // Screen owning the floating window: only that instance shows it (just one).
   property string detachedScreen: ""
   property string screenName: ""
-  // Aterrizaje tras un salto de monitor: la instancia dueña coloca la
-  // tarjeta donde cruzo el puntero en vez de la esquina por defecto.
+  // Landing after a monitor jump: the owning instance places the
+  // card where the pointer crossed instead of the default corner.
   property int landX: -1
   property int landY: -1
   property int landSeq: 0
   property int landSeenSeq: 0
-  // Preview fantasma en el monitor vecino mientras se empuja al borde.
+  // Ghost preview on the neighboring monitor while pushing to the edge.
   property string previewScreen: ""
   property int previewX: -1
   property int previewY: -1
-  // Mapa de monitores {name,x,y,w,h} para el salto del flotante.
+  // Monitor map {name,x,y,w,h} for the floating window jump.
   property var monitorMap: []
   function updateScreenName() {
     try {
@@ -50,7 +50,7 @@ BarWidget {
     return v === true || v === 1 || v === "On" || v === "on" || v === "true";
   }
 
-  // ---- rutas ------------------------------------------------------------
+  // ---- paths ------------------------------------------------------------
   readonly property string homeDir: Quickshell.env("HOME")
   readonly property string runDir: {
     var r = Quickshell.env("XDG_RUNTIME_DIR");
@@ -62,7 +62,7 @@ BarWidget {
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
   readonly property string alarmScript: root.pluginDir + "scripts/timer-alarm.sh"
 
-  // ---- presets (editables, persisten en JSON) ---------------------------
+  // ---- presets (editable, persisted in JSON) ----------------------------
   property var presets: Logic.defaultPresets()
   property bool presetsReady: false
 
@@ -116,7 +116,7 @@ BarWidget {
     onLoaded: root.loadPresets(presetsView.text())
     onLoadFailed: { root.loadPresets(""); }
     onFileChanged: {
-      // Releer sin pisar una edicion local en curso.
+      // Re-read without overwriting a local edit in progress.
       presetsReload.restart();
     }
   }
@@ -139,7 +139,7 @@ BarWidget {
     }
   }
 
-  // ---- archivo de estado compartido (sync multi-monitor) ----------------
+  // ---- shared state file (multi-monitor sync) ---------------------------
   FileView {
     id: stateView
     path: root.statePath
@@ -165,7 +165,7 @@ BarWidget {
     if (!o || typeof o !== "object") return;
     var stamp = Number(o.updatedAt || 0);
     if (!(stamp > root.lastApplied)) return;
-    // No pisar un finished local ya alarmado con un eco viejo.
+    // Do not overwrite an already-alarmed local finished with a stale echo.
     root.lastApplied = stamp;
     root.lastWriter = String(o.writer || "");
     var st = String(o.state || "idle");
@@ -194,7 +194,7 @@ BarWidget {
     }
     if (root.tState !== "finished" || st !== "running") root.tState = st;
     if (st === "idle") root.stagedSec = Logic.clampSeconds(o.staged !== undefined ? o.staged : total);
-    // Si cargamos un "terminado" (p. ej. reinicio del shell), igual se calma.
+    // If we load a "finished" state (e.g. shell restart), still calm it down.
     if (st === "finished") finishCalm.restart();
     else finishCalm.stop();
   }
@@ -224,7 +224,7 @@ BarWidget {
     stateView.setText(payload);
   }
 
-  // ---- acciones ---------------------------------------------------------
+  // ---- actions ----------------------------------------------------------
   function startSeconds(sec) {
     var s = Logic.clampSeconds(sec);
     finishCalm.stop();
@@ -278,7 +278,7 @@ BarWidget {
     root.writeState();
   }
 
-  // +5 / -5 en vivo (funciona en idle sobre staged, o en marcha/pausa).
+  // +5 / -5 live (works in idle on staged, or while running/paused).
   function nudge(deltaSec) {
     var d = Number(deltaSec) || 0;
     finishCalm.stop();
@@ -310,14 +310,14 @@ BarWidget {
 
   function setDetached(v) {
     root.detached = v === true;
-    // Solo la pantalla donde se pidio el flotante lo muestra.
+    // Only the screen where the floating window was requested shows it.
     root.detachedScreen = root.detached ? root.screenName : "";
-    // Detach manual: sin aterrizaje (posicion por defecto).
+    // Manual detach: no landing (default position).
     root.landX = -1;
     root.landY = -1;
     if (root.detached) root.refreshMonitors();
     root.writeState();
-    // Persistir en shell.json para sobrevivir reinicios.
+    // Persist in shell.json to survive restarts.
     var entry = { id: root.moduleName };
     for (var k in root.settings) if (k !== "id") entry[k] = root.settings[k];
     entry.detached = root.detached;
@@ -332,14 +332,14 @@ BarWidget {
     root.remainingSec = 0;
     root.endAt = 0;
     root.writeState();
-    // La pildora vuelve a su fondo inactivo cuando la notificacion
-    // expira (~15 s): el rojo no queda clavado hasta el clic.
+    // The pill returns to its inactive background when the notification
+    // expires (~15 s): red does not stay stuck until the click.
     finishCalm.restart();
-    // La alarma se auto-dedup entre monitores con flock dentro del script.
+    // The alarm self-dedups across monitors with flock inside the script.
     if (root.soundOn) alarmProc.running = true;
     else notifyProc.running = true;
     if (root.bar && root.bar.shell && typeof root.bar.shell.summon === "function") {
-      // No forzar apertura: solo pulsar en la barra + flotante.
+      // Do not force opening: only pulse in the bar + floating window.
     }
   }
 
@@ -350,8 +350,8 @@ BarWidget {
 
   Process {
     id: notifyProc
-    // Pasa por el script para reutilizar su flock: una sola notificacion
-    // aunque haya una barra por monitor.
+    // Goes through the script to reuse its flock: a single notification
+    // even with one bar per monitor.
     command: ["bash", root.alarmScript, "--silent"]
   }
 
@@ -364,7 +364,7 @@ BarWidget {
     }
   }
 
-  // Geometria de monitores para el salto del flotante entre pantallas.
+  // Monitor geometry for the floating window jump across screens.
   function refreshMonitors() {
     if (!monitorsProc.running) monitorsProc.running = true;
   }
@@ -387,7 +387,7 @@ BarWidget {
     } catch (e) {}
   }
 
-  // Monitor vecino en la direccion dada (objeto del mapa o null).
+  // Neighboring monitor in the given direction (map object or null).
   function findNeighborObj(dir) {
     var cur = null;
     for (var i = 0; i < root.monitorMap.length; i++) {
@@ -421,8 +421,8 @@ BarWidget {
     return best;
   }
 
-  // Posicion de aterrizaje en el monitor destino: misma altura relativa,
-  // pegado al borde de cruce. Devuelve {x,y} o null.
+  // Landing position on the target monitor: same relative height,
+  // stuck to the crossing edge. Returns {x,y} or null.
   function landingFor(dir, ptrX, ptrY, tgtName) {
     var cur = null, tgt = null;
     for (var i = 0; i < root.monitorMap.length; i++) {
@@ -432,7 +432,7 @@ BarWidget {
     if (!cur || !tgt) return null;
     var px = Number(ptrX) || 0;
     var py = Number(ptrY) || 0;
-    var half = 122; // mitad de la tarjeta cuadrada (244)
+    var half = 122; // half of the square card (244)
     var lx = 12, ly = 12;
     if (dir === "right") {
       lx = 12;
@@ -450,9 +450,9 @@ BarWidget {
     return { x: Math.round(lx), y: Math.round(ly) };
   }
 
-  // Mueve el flotante al monitor vecino en la direccion dada,
-  // aterrizando donde cruzo el puntero (ptr en coords de la pantalla
-  // actual). La instancia de esa pantalla lo muestra ahi.
+  // Moves the floating window to the neighboring monitor in the given direction,
+  // landing where the pointer crossed (ptr in current screen coords
+  // ). That screen's instance shows it there.
   function hopFloating(dir, ptrX, ptrY) {
     var best = root.findNeighborObj(dir);
     if (!best) return false;
@@ -469,7 +469,7 @@ BarWidget {
     return true;
   }
 
-  // Fantasma en el vecino mientras se empuja (throttleado por el llamador).
+  // Ghost on the neighbor while pushing (throttled by the caller).
   function writePreview(screen, x, y) {
     root.previewScreen = String(screen || "");
     root.previewX = Math.round(Number(x) || 0);
@@ -507,7 +507,7 @@ BarWidget {
     }
   }
 
-  // Calma el rojo de "terminado" (vuelve a idle/inactivo).
+  // Calms the "finished" red (back to idle/inactive).
   Timer {
     id: finishCalm
     interval: 15000
@@ -517,7 +517,7 @@ BarWidget {
     }
   }
 
-  // ---- panel embebido ---------------------------------------------------
+  // ---- embedded panel ---------------------------------------------------
   readonly property bool opened: panelItem ? panelItem.opened === true : false
   readonly property bool popoutSwitchClosing: panelItem ? panelItem.popoutSwitchClosing === true : false
   function open() { if (panelItem) panelItem.open(); }
@@ -568,14 +568,14 @@ BarWidget {
     }
   }
 
-  // ---- pildora en la barra (acento glass + latido verde) -----------------
-  // El acento de la topbar es `bar.urgent` (= Color.bar.active).
+  // ---- pill in the bar (glass accent + green heartbeat) ------------------
+  // The topbar accent is `bar.urgent` (= Color.bar.active).
   readonly property color accent: root.bar ? root.bar.urgent : Color.accent
   function contrastOn(c) {
     var lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
     return lum > 0.55 ? Qt.rgba(0, 0, 0, 0.92) : Qt.rgba(1, 1, 1, 0.96);
   }
-  // Fase de alerta: ultimos 5 segundos en marcha -> latido por segundo.
+  // Alert phase: last 5 running seconds -> heartbeat every second.
   readonly property bool urgentPhase: root.tState === "running" && root.remainingSec <= 5 && root.remainingSec > 0
   property int beat: 0
   property int _lastBeatSec: -1
@@ -591,8 +591,8 @@ BarWidget {
   }
   readonly property color topbarBg: root.bar ? root.bar.background : Color.background
   readonly property color topbarFg: root.bar ? root.bar.foreground : Color.foreground
-  // Acento SOLO cuando el timer esta activado (en marcha). En reposo,
-  // pausa o terminado: fondo de la topbar + borde de acento.
+  // Accent ONLY while the timer is active (running). When idle,
+  // paused or finished: topbar background + accent border.
   readonly property color pillBg: {
     if (root.tState === "finished") return Util.alpha(root.bar ? root.bar.urgent : Color.urgent, 0.62);
     if (root.urgentPhase) return Qt.rgba(0.10, 0.45, 0.24, 0.78);
@@ -645,7 +645,7 @@ BarWidget {
       border.width: 1
       border.color: root.pillBorder
 
-      // Latido verde: un destello por segundo en los ultimos 5 s.
+      // Green heartbeat: one flash per second in the last 5 s.
       Rectangle {
         id: greenFlash
         anchors.fill: parent
@@ -661,7 +661,7 @@ BarWidget {
         NumberAnimation { target: greenFlash; property: "opacity"; to: 0.0; duration: 480; easing.type: Easing.InOutQuad }
       }
 
-      // Pulso rojo al terminar.
+      // Red pulse on finish.
       Rectangle {
         id: finishedFlash
         anchors.fill: parent
@@ -711,7 +711,7 @@ BarWidget {
     }
   }
 
-  // Ventana flotante siempre visible (layer overlay).
+  // Always-visible floating window (overlay layer).
   Floating {
     id: floatingWin
     host: root
@@ -720,9 +720,9 @@ BarWidget {
   Component.onCompleted: {
     root.detached = root.setting("detached", false) === true;
     root.updateScreenName();
-    // Tras un reinicio, el flotante vuelve a su pantalla si seguia activo.
+    // After a restart, the floating window returns to its screen if still active.
     if (root.detached && root.detachedScreen === "") root.detachedScreen = root.screenName;
-    // La ruta del PillButton puede no estar lista aun; reintentar un latido.
+    // The PillButton path may not be ready yet; retry one beat later.
     Qt.callLater(root.updateScreenName);
     mkdirProc.running = true;
   }

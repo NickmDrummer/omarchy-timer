@@ -31,7 +31,7 @@ else
   BACKUP="$HYPR_LUA.bak.$(date +%Y%m%d-%H%M%S)"
   cp "$HYPR_LUA" "$BACKUP" || { echo "setup: backup failed, aborting." >&2; exit 1; }
   cat >> "$HYPR_LUA" <<'EOF'
--- [nickmdrummer.timer] blur para popup y flotante (managed by the plugin; safe to remove)
+-- [nickmdrummer.timer] blur for popup and floating (managed by the plugin; safe to remove)
 local timer_blur_path = os.getenv("HOME") .. "/.config/omarchy/plugins/nickmdrummer.timer/timer-hypr.lua"
 local timer_blur_file = io.open(timer_blur_path, "r")
 if timer_blur_file then

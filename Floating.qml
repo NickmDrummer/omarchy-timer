@@ -4,25 +4,25 @@ import Quickshell.Wayland
 import qs.Commons
 import "TimerLogic.js" as Logic
 
-// Ventana flotante del Timer: cuadrada, grande y minimalista, siempre
-// visible por encima (layer overlay) con blur del compositor y fondo
-// translucido. Se mueve arrastrando la zona de la hora. El latido de los
-// ultimos 5 segundos solo afecta a la fuente, nunca al fondo.
+// Floating Timer window: square, large and minimalist, always
+// visible on top (overlay layer) with compositor blur and a
+// translucent background. It moves by dragging the time area. The
+// last-5-seconds heartbeat only affects the font, never the background.
 PanelWindow {
   id: root
 
   required property var host
 
   screen: {
-    // Anclar a la pantalla de la barra que hospeda el widget.
+    // Anchor to the screen of the bar hosting the widget.
     try {
       var w = host && host.pillButton ? host.pillButton.QsWindow.window : null;
       return w && w.screen ? w.screen : null;
     } catch (e) { return null; }
   }
 
-  // Uno solo en todo el sistema: solo la pantalla dueña muestra la
-  // tarjeta. La pantalla destino del preview muestra un fantasma.
+  // Only one across the whole system: only the owning screen shows
+  // the card. The preview target screen shows a ghost.
   readonly property bool isOwner: host && host.detached === true
     && host.detachedScreen !== "" && host.screenName === host.detachedScreen
   readonly property bool isPreview: host && !isOwner
@@ -35,11 +35,11 @@ PanelWindow {
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-  // Fullscreen estatica: la tarjeta se mueve DENTRO sin tocar la
-  // superficie. Durante el arrastre la mascara se abre a toda la pantalla
-  // UNA vez (al presionar) y se cierra al soltar: cero commits por evento,
-  // el grab no se corta y no hay stutter. Fuera del drag, la mascara es
-  // solo la tarjeta y el resto traspasa los clics.
+  // Static fullscreen: the card moves INSIDE without touching the
+  // surface. While dragging, the mask opens to the whole screen
+  // ONCE (on press) and closes on release: zero commits per event,
+  // the grab is not cut off and there is no stutter. Outside the drag,
+  // the mask is just the card and the rest lets clicks through.
   property bool dragging: false
   anchors {
     top: true
@@ -60,9 +60,9 @@ PanelWindow {
   readonly property bool phase: host && host.urgentPhase === true
   readonly property real screenW: root.screen ? root.screen.width : 1920
   readonly property real screenH: root.screen ? root.screen.height : 1080
-  // Siempre quedan 80 px visibles: el flotante nunca se pierde fuera
-  // de la pantalla (tampoco intentando pasarlo al monitor vecino:
-  // las ventanas layer viven en un solo output).
+  // Always keep 80 px visible: the floating window never gets lost off
+  // the screen (not even when trying to push it to the neighboring monitor:
+  // layer windows live on a single output).
   readonly property real keepVisible: 80
   function clampCard() {
     card.x = Math.max(-(card.width - root.keepVisible),
@@ -75,8 +75,8 @@ PanelWindow {
       root.clampCard();
       root.tryLand();
     } else if (dragZone.previewMine) {
-      // Respaldo: si la ventana se oculta a mitad de un preview,
-      // no dejar el fantasma colgado en el vecino.
+      // Fallback: if the window hides mid-preview,
+      // do not leave the ghost hanging on the neighbor.
       dragZone.previewMine = false;
       if (host && typeof host.clearPreview === "function") host.clearPreview();
     }
@@ -110,8 +110,8 @@ PanelWindow {
     function onLandSeqChanged() { root.tryLand(); }
   }
 
-  // Aplica el aterrizaje una sola vez: la tarjeta aparece donde cruzo
-  // el puntero, asi el salto se siente continuo.
+  // Apply the landing only once: the card appears where the
+  // pointer crossed, so the jump feels seamless.
   function tryLand() {
     if (!root.visible || !host) return;
     if (host.landSeq <= host.landSeenSeq) return;
@@ -136,7 +136,7 @@ PanelWindow {
       ? (host.bar ? host.bar.urgent : Color.urgent)
       : Qt.rgba(1, 1, 1, 0.14)
 
-    // Volver a la barra (arriba a la derecha).
+    // Back to the bar (top right).
     Text {
       anchors.top: parent.top
       anchors.right: parent.right
@@ -168,7 +168,7 @@ PanelWindow {
         font.letterSpacing: 2
       }
 
-      // Zona de hora: clic abre el panel, arrastrar mueve la ventana.
+      // Time area: click opens the panel, dragging moves the window.
       Item {
         id: timeZone
         anchors.horizontalCenter: parent.horizontalCenter
@@ -194,11 +194,11 @@ PanelWindow {
           NumberAnimation { target: timeTextItem; property: "scale"; to: 1.0; duration: 240; easing.type: Easing.InOutQuad }
         }
 
-        // Arrastre ABSOLUTO 1:1 sobre ventana estatica. La posicion se
-        // calcula en coords de la ventana (estable), no con deltas
-        // relativos: asi los eventos sinteticos que Qt emite al moverse
-        // el item bajo el cursor no se acumulan (eso causaba el shaking).
-        // Todo redondeado a enteros para no shimmear texto/blur.
+        // ABSOLUTE 1:1 dragging over a static window. The position is
+        // computed in window coords (stable), not with relative
+        // deltas: this way the synthetic events Qt emits as the
+        // item moves under the cursor do not accumulate (that caused the shaking).
+        // Everything rounded to integers to avoid text/blur shimmer.
         MouseArea {
           id: dragZone
           anchors.fill: parent
@@ -212,14 +212,14 @@ PanelWindow {
           property real grabDX: 0
           property real grabDY: 0
           property bool moved: false
-          // Resto sin aplicar por el clamp = empuje contra el borde
-          // (para saltar de monitor hay que EMPUJAR, ver onReleased).
+          // Remainder not applied due to clamp = push against the edge
+          // (to jump monitors you must PUSH, see onReleased).
           property real edgePX: 0
           property real edgePY: 0
           property bool previewMine: false
           property double lastPreview: 0
           function rootPos(m) { return dragZone.mapToItem(card.parent, m.x, m.y); }
-          // Fantasma en el vecino mientras se empuja (max ~8 escrituras/s).
+          // Ghost on the neighbor while pushing (max ~8 writes/s).
           function updatePreview(p) {
             var pdir = "";
             if (Math.abs(edgePX) > 24) pdir = edgePX > 0 ? "right" : "left";
@@ -286,8 +286,8 @@ PanelWindow {
             dragZone.edgePY = 0;
             dragZone.previewMine = false;
             if (host && typeof host.clearPreview === "function") host.clearPreview();
-            // Salto de monitor por empuje al borde (si hay vecino),
-            // aterrizando donde esta el puntero.
+            // Monitor jump by pushing against the edge (if there is a neighbor),
+            // landing where the pointer is.
             if (dir !== "" && host && typeof host.hopFloating === "function") {
               if (host.hopFloating(dir, dragZone.lastPX, dragZone.lastPY)) return;
             }
@@ -304,7 +304,7 @@ PanelWindow {
       }
     }
 
-    // Acciones abajo: pausar / parar.
+    // Actions at the bottom: pause / stop.
     Row {
       anchors.bottom: parent.bottom
       anchors.horizontalCenter: parent.horizontalCenter
@@ -348,10 +348,10 @@ PanelWindow {
     }
   }
 
-  // Fantasma en el monitor destino mientras se empuja al borde: clon
-  // visual sin interaccion, en la misma posicion donde aterrizaria.
-  // Al soltar, la tarjeta real aparece exactamente ahi (transicion
-  // imperceptible).
+  // Ghost on the target monitor while pushing against the edge: a
+  // visual clone without interaction, at the same position where it would land.
+  // On release, the real card appears exactly there (imperceptible
+  // transition).
   Rectangle {
     id: ghost
     visible: root.isPreview
