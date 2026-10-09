@@ -1,0 +1,729 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import qs.Commons
+import qs.Ui
+import "TimerLogic.js" as Logic
+
+// Timer — pildora de cuenta regresiva en la barra.
+// El estado vive aqui (fuente de verdad) y se sincroniza entre monitores
+// mediante un archivo de estado en XDG_RUNTIME_DIR. El Panel y la ventana
+// flotante leen y actuan a traves de hostWidget.
+BarWidget {
+  id: root
+  moduleName: "nickmdrummer.timer"
+
+  // ---- estado -----------------------------------------------------------
+  // idle | running | paused | finished
+  property string tState: "idle"
+  property int totalSec: 600
+  property int remainingSec: 600
+  property double endAt: 0
+  property int stagedSec: 600
+  property bool detached: false
+  // Pantalla dueña del flotante: solo esa instancia lo muestra (uno solo).
+  property string detachedScreen: ""
+  property string screenName: ""
+  // Aterrizaje tras un salto de monitor: la instancia dueña coloca la
+  // tarjeta donde cruzo el puntero en vez de la esquina por defecto.
+  property int landX: -1
+  property int landY: -1
+  property int landSeq: 0
+  property int landSeenSeq: 0
+  // Preview fantasma en el monitor vecino mientras se empuja al borde.
+  property string previewScreen: ""
+  property int previewX: -1
+  property int previewY: -1
+  // Mapa de monitores {name,x,y,w,h} para el salto del flotante.
+  property var monitorMap: []
+  function updateScreenName() {
+    try {
+      var w = pillButton && pillButton.QsWindow ? pillButton.QsWindow.window : null;
+      root.screenName = (w && w.screen && w.screen.name) ? String(w.screen.name) : "";
+    } catch (e) { root.screenName = ""; }
+  }
+  property string lastWriter: ""
+  property double lastApplied: 0
+
+  readonly property bool soundOn: {
+    var v = root.setting("sound", "On");
+    return v === true || v === 1 || v === "On" || v === "on" || v === "true";
+  }
+
+  // ---- rutas ------------------------------------------------------------
+  readonly property string homeDir: Quickshell.env("HOME")
+  readonly property string runDir: {
+    var r = Quickshell.env("XDG_RUNTIME_DIR");
+    return (r && r !== "" ? r : "/tmp") + "/nickmdrummer-timer";
+  }
+  readonly property string statePath: root.runDir + "/state.json"
+  readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (root.homeDir + "/.config")) + "/nickmdrummer-timer"
+  readonly property string presetsPath: root.configDir + "/presets.json"
+  readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
+  readonly property string alarmScript: root.pluginDir + "scripts/timer-alarm.sh"
+
+  // ---- presets (editables, persisten en JSON) ---------------------------
+  property var presets: Logic.defaultPresets()
+  property bool presetsReady: false
+
+  function loadPresets(text) {
+    var parsed = null;
+    try { parsed = JSON.parse(String(text || "")); } catch (e) { parsed = null; }
+    if (parsed) root.presets = Logic.cleanPresets(parsed);
+    else root.presets = Logic.defaultPresets();
+    root.presetsReady = true;
+  }
+
+  function savePresets() {
+    if (!root.presetsReady) return;
+    presetsSave.restart();
+  }
+
+  function addPreset(label, minutes) {
+    var m = Logic.clampMinutes(minutes);
+    var name = String(label || m).trim().slice(0, 12) || String(m);
+    var next = root.presets.slice();
+    next.push({ id: Logic.uid("p"), label: name, minutes: m });
+    root.presets = next.slice(0, 24);
+    root.savePresets();
+  }
+
+  function removePreset(id) {
+    root.presets = root.presets.filter(function(p) { return String(p.id) !== String(id); });
+    if (root.presets.length === 0) root.presets = Logic.defaultPresets();
+    root.savePresets();
+  }
+
+  function renamePreset(id, label, minutes) {
+    var m = Logic.clampMinutes(minutes);
+    var name = String(label || m).trim().slice(0, 12) || String(m);
+    root.presets = root.presets.map(function(p) {
+      if (String(p.id) === String(id)) return { id: p.id, label: name, minutes: m };
+      return p;
+    });
+    root.savePresets();
+  }
+
+  function resetPresets() {
+    root.presets = Logic.defaultPresets();
+    root.savePresets();
+  }
+
+  FileView {
+    id: presetsView
+    path: root.presetsPath
+    printErrors: false
+    onLoaded: root.loadPresets(presetsView.text())
+    onLoadFailed: { root.loadPresets(""); }
+    onFileChanged: {
+      // Releer sin pisar una edicion local en curso.
+      presetsReload.restart();
+    }
+  }
+
+  Timer {
+    id: presetsReload
+    interval: 400
+    onTriggered: {
+      if (presetsSave.running) return;
+      presetsView.reload();
+    }
+  }
+
+  Timer {
+    id: presetsSave
+    interval: 500
+    onTriggered: {
+      var payload = JSON.stringify({ version: 1, presets: root.presets }, null, 2) + "\n";
+      presetsView.setText(payload);
+    }
+  }
+
+  // ---- archivo de estado compartido (sync multi-monitor) ----------------
+  FileView {
+    id: stateView
+    path: root.statePath
+    printErrors: false
+    watchChanges: true
+    onLoaded: root.applyStateText(stateView.text())
+    onLoadFailed: root.writeState()
+    onFileChanged: stateApplyDebounce.restart()
+  }
+
+  Timer {
+    id: stateApplyDebounce
+    interval: 120
+    onTriggered: {
+      stateView.reload();
+      root.applyStateText(stateView.text());
+    }
+  }
+
+  function applyStateText(text) {
+    var o = null;
+    try { o = JSON.parse(String(text || "")); } catch (e) { return; }
+    if (!o || typeof o !== "object") return;
+    var stamp = Number(o.updatedAt || 0);
+    if (!(stamp > root.lastApplied)) return;
+    // No pisar un finished local ya alarmado con un eco viejo.
+    root.lastApplied = stamp;
+    root.lastWriter = String(o.writer || "");
+    var st = String(o.state || "idle");
+    if (["idle", "running", "paused", "finished"].indexOf(st) < 0) st = "idle";
+    var total = Logic.clampSeconds(o.total);
+    var rem = Logic.clampSeconds(o.remaining !== undefined ? o.remaining : total);
+    root.totalSec = total;
+    root.endAt = Number(o.endAt || 0);
+    root.detached = o.detached === true;
+    root.detachedScreen = String(o.detachedScreen || "");
+    root.landX = Math.round(Number(o.landX !== undefined ? o.landX : -1));
+    root.landY = Math.round(Number(o.landY !== undefined ? o.landY : -1));
+    root.landSeq = Math.round(Number(o.landSeq || 0));
+    root.previewScreen = String(o.previewScreen || "");
+    root.previewX = Math.round(Number(o.previewX !== undefined ? o.previewX : -1));
+    root.previewY = Math.round(Number(o.previewY !== undefined ? o.previewY : -1));
+    if (st === "running" && root.endAt > 0) {
+      var left = Math.max(0, Math.round((root.endAt - Date.now()) / 1000));
+      root.remainingSec = left;
+      if (left <= 0) {
+        root.finish(true);
+        return;
+      }
+    } else {
+      root.remainingSec = Math.min(rem, 43200);
+    }
+    if (root.tState !== "finished" || st !== "running") root.tState = st;
+    if (st === "idle") root.stagedSec = Logic.clampSeconds(o.staged !== undefined ? o.staged : total);
+    // Si cargamos un "terminado" (p. ej. reinicio del shell), igual se calma.
+    if (st === "finished") finishCalm.restart();
+    else finishCalm.stop();
+  }
+
+  function writeState() {
+    var stamp = Date.now() + Math.random();
+    root.lastApplied = stamp;
+    root.lastWriter = root.moduleName;
+    var payload = JSON.stringify({
+      version: 1,
+      state: root.tState,
+      total: root.totalSec,
+      remaining: root.remainingSec,
+      staged: root.stagedSec,
+      endAt: root.endAt,
+      detached: root.detached,
+      detachedScreen: root.detachedScreen,
+      landX: root.landX,
+      landY: root.landY,
+      landSeq: root.landSeq,
+      previewScreen: root.previewScreen,
+      previewX: root.previewX,
+      previewY: root.previewY,
+      writer: root.moduleName,
+      updatedAt: stamp
+    });
+    stateView.setText(payload);
+  }
+
+  // ---- acciones ---------------------------------------------------------
+  function startSeconds(sec) {
+    var s = Logic.clampSeconds(sec);
+    finishCalm.stop();
+    root.totalSec = s;
+    root.stagedSec = s;
+    root.remainingSec = s;
+    root.endAt = Date.now() + s * 1000;
+    root.tState = "running";
+    root.writeState();
+  }
+
+  function startStaged() { root.startSeconds(root.stagedSec); }
+
+  function pause() {
+    if (root.tState !== "running") return;
+    finishCalm.stop();
+    root.remainingSec = Math.max(0, Math.round((root.endAt - Date.now()) / 1000));
+    root.tState = "paused";
+    root.writeState();
+  }
+
+  function resume() {
+    if (root.tState !== "paused") return;
+    finishCalm.stop();
+    root.endAt = Date.now() + Math.max(1, root.remainingSec) * 1000;
+    root.tState = "running";
+    root.writeState();
+  }
+
+  function togglePause() {
+    if (root.tState === "running") root.pause();
+    else if (root.tState === "paused") root.resume();
+    else if (root.tState === "finished") root.dismiss();
+    else root.startStaged();
+  }
+
+  function resetAll() {
+    finishCalm.stop();
+    root.tState = "idle";
+    root.remainingSec = root.stagedSec;
+    root.totalSec = root.stagedSec;
+    root.endAt = 0;
+    root.writeState();
+  }
+
+  function dismiss() {
+    finishCalm.stop();
+    root.tState = "idle";
+    root.remainingSec = root.stagedSec;
+    root.endAt = 0;
+    root.writeState();
+  }
+
+  // +5 / -5 en vivo (funciona en idle sobre staged, o en marcha/pausa).
+  function nudge(deltaSec) {
+    var d = Number(deltaSec) || 0;
+    finishCalm.stop();
+    if (root.tState === "running") {
+      root.endAt += d * 1000;
+      var left = Math.max(0, Math.round((root.endAt - Date.now()) / 1000));
+      root.remainingSec = left;
+      if (left > root.totalSec) root.totalSec = left;
+      if (left <= 0) { root.finish(true); return; }
+    } else if (root.tState === "paused" || root.tState === "finished") {
+      root.remainingSec = Logic.clampSeconds(root.remainingSec + d);
+      if (root.remainingSec > root.totalSec) root.totalSec = root.remainingSec;
+      if (root.tState === "finished" && root.remainingSec > 0) root.tState = "paused";
+    } else {
+      root.stagedSec = Logic.clampSeconds(root.stagedSec + d);
+      root.remainingSec = root.stagedSec;
+      root.totalSec = root.stagedSec;
+    }
+    root.writeState();
+  }
+
+  function stageSeconds(sec) {
+    if (root.tState === "running" || root.tState === "paused") return;
+    root.stagedSec = Logic.clampSeconds(sec);
+    root.remainingSec = root.stagedSec;
+    root.totalSec = root.stagedSec;
+    root.writeState();
+  }
+
+  function setDetached(v) {
+    root.detached = v === true;
+    // Solo la pantalla donde se pidio el flotante lo muestra.
+    root.detachedScreen = root.detached ? root.screenName : "";
+    // Detach manual: sin aterrizaje (posicion por defecto).
+    root.landX = -1;
+    root.landY = -1;
+    if (root.detached) root.refreshMonitors();
+    root.writeState();
+    // Persistir en shell.json para sobrevivir reinicios.
+    var entry = { id: root.moduleName };
+    for (var k in root.settings) if (k !== "id") entry[k] = root.settings[k];
+    entry.detached = root.detached;
+    root.settings = entry;
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function") {
+      try { root.bar.shell.updateEntryInline(root.moduleName, entry); } catch (e) {}
+    }
+  }
+
+  function finish(fromTick) {
+    root.tState = "finished";
+    root.remainingSec = 0;
+    root.endAt = 0;
+    root.writeState();
+    // La pildora vuelve a su fondo inactivo cuando la notificacion
+    // expira (~15 s): el rojo no queda clavado hasta el clic.
+    finishCalm.restart();
+    // La alarma se auto-dedup entre monitores con flock dentro del script.
+    if (root.soundOn) alarmProc.running = true;
+    else notifyProc.running = true;
+    if (root.bar && root.bar.shell && typeof root.bar.shell.summon === "function") {
+      // No forzar apertura: solo pulsar en la barra + flotante.
+    }
+  }
+
+  Process {
+    id: alarmProc
+    command: ["bash", root.alarmScript]
+  }
+
+  Process {
+    id: notifyProc
+    // Pasa por el script para reutilizar su flock: una sola notificacion
+    // aunque haya una barra por monitor.
+    command: ["bash", root.alarmScript, "--silent"]
+  }
+
+  Process {
+    id: mkdirProc
+    command: ["bash", "-c", "mkdir -p \"$0\" \"$1\"", root.runDir, root.configDir]
+    onExited: function(code) {
+      presetsView.reload();
+      stateView.reload();
+    }
+  }
+
+  // Geometria de monitores para el salto del flotante entre pantallas.
+  function refreshMonitors() {
+    if (!monitorsProc.running) monitorsProc.running = true;
+  }
+
+  function applyMonitors(text) {
+    try {
+      var arr = JSON.parse(String(text || "[]"));
+      var out = [];
+      for (var i = 0; i < arr.length; i++) {
+        if (!arr[i] || !arr[i].name) continue;
+        out.push({
+          name: String(arr[i].name),
+          x: Number(arr[i].x) || 0,
+          y: Number(arr[i].y) || 0,
+          w: Number(arr[i].width) || 0,
+          h: Number(arr[i].height) || 0
+        });
+      }
+      if (out.length > 0) root.monitorMap = out;
+    } catch (e) {}
+  }
+
+  // Monitor vecino en la direccion dada (objeto del mapa o null).
+  function findNeighborObj(dir) {
+    var cur = null;
+    for (var i = 0; i < root.monitorMap.length; i++) {
+      if (root.monitorMap[i].name === root.detachedScreen) cur = root.monitorMap[i];
+    }
+    if (!cur) return null;
+    var best = null;
+    var bestGap = 1e9;
+    for (var j = 0; j < root.monitorMap.length; j++) {
+      var m = root.monitorMap[j];
+      if (m.name === cur.name) continue;
+      var vOverlap = Math.min(cur.y + cur.h, m.y + m.h) - Math.max(cur.y, m.y);
+      var hOverlap = Math.min(cur.x + cur.w, m.x + m.w) - Math.max(cur.x, m.x);
+      var gap = 1e9;
+      var ok = false;
+      if (dir === "right" && vOverlap > 100) {
+        gap = m.x - (cur.x + cur.w);
+        ok = gap >= -64 && gap < 512;
+      } else if (dir === "left" && vOverlap > 100) {
+        gap = cur.x - (m.x + m.w);
+        ok = gap >= -64 && gap < 512;
+      } else if (dir === "down" && hOverlap > 100) {
+        gap = m.y - (cur.y + cur.h);
+        ok = gap >= -64 && gap < 512;
+      } else if (dir === "up" && hOverlap > 100) {
+        gap = cur.y - (m.y + m.h);
+        ok = gap >= -64 && gap < 512;
+      }
+      if (ok && gap < bestGap) { bestGap = gap; best = m; }
+    }
+    return best;
+  }
+
+  // Posicion de aterrizaje en el monitor destino: misma altura relativa,
+  // pegado al borde de cruce. Devuelve {x,y} o null.
+  function landingFor(dir, ptrX, ptrY, tgtName) {
+    var cur = null, tgt = null;
+    for (var i = 0; i < root.monitorMap.length; i++) {
+      if (root.monitorMap[i].name === root.detachedScreen) cur = root.monitorMap[i];
+      if (root.monitorMap[i].name === tgtName) tgt = root.monitorMap[i];
+    }
+    if (!cur || !tgt) return null;
+    var px = Number(ptrX) || 0;
+    var py = Number(ptrY) || 0;
+    var half = 122; // mitad de la tarjeta cuadrada (244)
+    var lx = 12, ly = 12;
+    if (dir === "right") {
+      lx = 12;
+      ly = (cur.h > 0 ? (py / cur.h) : 0.5) * tgt.h - half;
+    } else if (dir === "left") {
+      lx = tgt.w - half * 2 - 12;
+      ly = (cur.h > 0 ? (py / cur.h) : 0.5) * tgt.h - half;
+    } else if (dir === "down") {
+      ly = 12;
+      lx = (cur.w > 0 ? (px / cur.w) : 0.5) * tgt.w - half;
+    } else {
+      ly = tgt.h - half * 2 - 12;
+      lx = (cur.w > 0 ? (px / cur.w) : 0.5) * tgt.w - half;
+    }
+    return { x: Math.round(lx), y: Math.round(ly) };
+  }
+
+  // Mueve el flotante al monitor vecino en la direccion dada,
+  // aterrizando donde cruzo el puntero (ptr en coords de la pantalla
+  // actual). La instancia de esa pantalla lo muestra ahi.
+  function hopFloating(dir, ptrX, ptrY) {
+    var best = root.findNeighborObj(dir);
+    if (!best) return false;
+    var L = root.landingFor(dir, ptrX, ptrY, best.name);
+    if (!L) return false;
+    root.detachedScreen = best.name;
+    root.landX = L.x;
+    root.landY = L.y;
+    root.landSeq = root.landSeq + 1;
+    root.previewScreen = "";
+    root.previewX = -1;
+    root.previewY = -1;
+    root.writeState();
+    return true;
+  }
+
+  // Fantasma en el vecino mientras se empuja (throttleado por el llamador).
+  function writePreview(screen, x, y) {
+    root.previewScreen = String(screen || "");
+    root.previewX = Math.round(Number(x) || 0);
+    root.previewY = Math.round(Number(y) || 0);
+    root.writeState();
+  }
+
+  function clearPreview() {
+    if (root.previewScreen === "") return;
+    root.previewScreen = "";
+    root.previewX = -1;
+    root.previewY = -1;
+    root.writeState();
+  }
+
+  Process {
+    id: monitorsProc
+    command: ["hyprctl", "monitors", "-j"]
+    stdout: StdioCollector { id: monitorsOut; waitForEnd: true }
+    onExited: function(code) {
+      if (code === 0) root.applyMonitors(monitorsOut.text);
+    }
+  }
+
+  Timer {
+    id: tick
+    interval: 250
+    running: root.tState === "running"
+    repeat: true
+    onTriggered: {
+      if (root.endAt <= 0) return;
+      var left = Math.round((root.endAt - Date.now()) / 1000);
+      if (left <= 0) root.finish(true);
+      else root.remainingSec = left;
+    }
+  }
+
+  // Calma el rojo de "terminado" (vuelve a idle/inactivo).
+  Timer {
+    id: finishCalm
+    interval: 15000
+    repeat: false
+    onTriggered: {
+      if (root.tState === "finished") root.dismiss();
+    }
+  }
+
+  // ---- panel embebido ---------------------------------------------------
+  readonly property bool opened: panelItem ? panelItem.opened === true : false
+  readonly property bool popoutSwitchClosing: panelItem ? panelItem.popoutSwitchClosing === true : false
+  function open() { if (panelItem) panelItem.open(); }
+  function close() { if (panelItem) panelItem.close(); }
+  function togglePanel() { if (panelItem) panelItem.toggle(); }
+  function closeForPopoutSwitch() { if (panelItem) panelItem.closeForPopoutSwitch(); }
+
+  property var panelItem: null
+  function injectPanel() {
+    var target = panelLoader.item;
+    if (!target) return;
+    root.panelItem = target;
+    if ("bar" in target) target.bar = root.bar;
+    if ("settings" in target) target.settings = root.settings;
+    if ("anchorItem" in target) target.anchorItem = pillButton;
+    if ("hostWidget" in target) target.hostWidget = root;
+  }
+  onBarChanged: {
+    injectPanel();
+    updateScreenName();
+  }
+  onSettingsChanged: injectPanel()
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Panel.qml")
+    visible: false
+    onLoaded: {
+      root.injectPanel();
+      Qt.callLater(root.injectPanel);
+    }
+  }
+
+  IpcHandler {
+    target: "nickmdrummer.timer"
+    function open(): void { root.open(); }
+    function close(): void { root.close(); }
+    function show(): void { root.open(); }
+    function hide(): void { root.close(); }
+    function toggle(): void { root.togglePanel(); }
+    function start(minutes: string): void { root.startSeconds(Number(minutes) * 60 || 600); }
+    function stop(): void { root.resetAll(); }
+    function detach(): void { root.setDetached(true); }
+    function attach(): void { root.setDetached(false); }
+    function status(): string {
+      return JSON.stringify({ state: root.tState, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened });
+    }
+  }
+
+  // ---- pildora en la barra (acento glass + latido verde) -----------------
+  // El acento de la topbar es `bar.urgent` (= Color.bar.active).
+  readonly property color accent: root.bar ? root.bar.urgent : Color.accent
+  function contrastOn(c) {
+    var lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    return lum > 0.55 ? Qt.rgba(0, 0, 0, 0.92) : Qt.rgba(1, 1, 1, 0.96);
+  }
+  // Fase de alerta: ultimos 5 segundos en marcha -> latido por segundo.
+  readonly property bool urgentPhase: root.tState === "running" && root.remainingSec <= 5 && root.remainingSec > 0
+  property int beat: 0
+  property int _lastBeatSec: -1
+  onRemainingSecChanged: {
+    if (root.urgentPhase && root.remainingSec !== root._lastBeatSec) {
+      root._lastBeatSec = root.remainingSec;
+      root.beat++;
+    }
+  }
+  onBeatChanged: {
+    greenPulse.restart();
+    pillThump.restart();
+  }
+  readonly property color topbarBg: root.bar ? root.bar.background : Color.background
+  readonly property color topbarFg: root.bar ? root.bar.foreground : Color.foreground
+  // Acento SOLO cuando el timer esta activado (en marcha). En reposo,
+  // pausa o terminado: fondo de la topbar + borde de acento.
+  readonly property color pillBg: {
+    if (root.tState === "finished") return Util.alpha(root.bar ? root.bar.urgent : Color.urgent, 0.62);
+    if (root.urgentPhase) return Qt.rgba(0.10, 0.45, 0.24, 0.78);
+    if (root.tState === "running") return Util.alpha(root.accent, 0.55);
+    return root.topbarBg;
+  }
+  readonly property color pillBorder: {
+    if (root.tState === "finished") return (root.bar ? root.bar.urgent : Color.urgent);
+    if (root.urgentPhase) return Qt.rgba(0.29, 0.87, 0.5, 0.9);
+    return Util.alpha(root.accent, 0.9);
+  }
+  readonly property string face: root.bar && root.bar.fontFamily ? root.bar.fontFamily : Style.font.family
+
+  readonly property string pillText: {
+    if (root.tState === "finished") return "TIMER 00:00";
+    if (root.tState === "idle") return "TIMER " + Logic.fmt(root.stagedSec);
+    return "TIMER " + Logic.fmt(root.remainingSec);
+  }
+
+  readonly property color pillFg: {
+    if (root.tState === "finished") return root.contrastOn(root.bar ? root.bar.urgent : Color.urgent);
+    if (root.urgentPhase) return Qt.rgba(1, 1, 1, 0.96);
+    if (root.tState === "running") return root.contrastOn(root.accent);
+    return root.topbarFg;
+  }
+
+  implicitWidth: pill.implicitWidth
+  implicitHeight: pill.implicitHeight
+
+  Item {
+    id: pill
+    anchors.fill: parent
+    implicitWidth: pillButton.implicitWidth + 4
+    implicitHeight: barSize
+    transformOrigin: Item.Center
+
+    SequentialAnimation {
+      id: pillThump
+      NumberAnimation { target: pill; property: "scale"; to: 1.08; duration: 120; easing.type: Easing.OutQuad }
+      NumberAnimation { target: pill; property: "scale"; to: 1.0; duration: 240; easing.type: Easing.InOutQuad }
+    }
+
+    Rectangle {
+      id: glass
+      anchors.centerIn: parent
+      width: parent.width - 4
+      height: Math.min(parent.height - 6, Style.space(24))
+      radius: height / 2
+      color: root.pillBg
+      border.width: 1
+      border.color: root.pillBorder
+
+      // Latido verde: un destello por segundo en los ultimos 5 s.
+      Rectangle {
+        id: greenFlash
+        anchors.fill: parent
+        radius: height / 2
+        color: Qt.rgba(0.29, 0.87, 0.5, 1)
+        opacity: 0
+        visible: root.urgentPhase
+      }
+
+      SequentialAnimation {
+        id: greenPulse
+        NumberAnimation { target: greenFlash; property: "opacity"; to: 0.55; duration: 130; easing.type: Easing.OutQuad }
+        NumberAnimation { target: greenFlash; property: "opacity"; to: 0.0; duration: 480; easing.type: Easing.InOutQuad }
+      }
+
+      // Pulso rojo al terminar.
+      Rectangle {
+        id: finishedFlash
+        anchors.fill: parent
+        radius: height / 2
+        color: "transparent"
+        border.width: 2
+        border.color: (root.bar ? root.bar.urgent : Color.urgent)
+        opacity: 0
+        visible: root.tState === "finished"
+      }
+
+      SequentialAnimation {
+        id: finishedPulse
+        running: root.tState === "finished"
+        loops: Animation.Infinite
+        NumberAnimation { target: finishedFlash; property: "opacity"; to: 1; duration: 550; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: finishedFlash; property: "opacity"; to: 0.25; duration: 550; easing.type: Easing.InOutQuad }
+      }
+    }
+
+    WidgetButton {
+      id: pillButton
+      anchors.centerIn: parent
+      bar: root.bar
+      text: root.pillText
+      fontFamily: root.face
+      fontSize: Style.font.body
+      foreground: root.pillFg
+      active: false
+      useActiveColor: false
+      tooltipText: {
+        if (root.tState === "running") return "Timer running — click to open, wheel ±1 min";
+        if (root.tState === "paused") return "Timer paused — click to resume";
+        if (root.tState === "finished") return "Time's up! Click to dismiss";
+        return "Timer — click to configure";
+      }
+      onPressed: function(btn) {
+        if (root.tState === "finished") { root.dismiss(); return; }
+        if (btn === Qt.MiddleButton) root.togglePause();
+        else root.togglePanel();
+      }
+      onWheelMoved: function(delta) {
+        var steps = delta > 0 ? 1 : -1;
+        if (root.tState === "idle") root.stageSeconds(root.stagedSec + steps * 300);
+        else root.nudge(steps * 60);
+      }
+    }
+  }
+
+  // Ventana flotante siempre visible (layer overlay).
+  Floating {
+    id: floatingWin
+    host: root
+  }
+
+  Component.onCompleted: {
+    root.detached = root.setting("detached", false) === true;
+    root.updateScreenName();
+    // Tras un reinicio, el flotante vuelve a su pantalla si seguia activo.
+    if (root.detached && root.detachedScreen === "") root.detachedScreen = root.screenName;
+    // La ruta del PillButton puede no estar lista aun; reintentar un latido.
+    Qt.callLater(root.updateScreenName);
+    mkdirProc.running = true;
+  }
+}
