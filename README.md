@@ -6,24 +6,17 @@ editable presets and an always-on-top floating mode.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/nickmdrummer/omarchy-timer.git --enable --yes
+omarchy plugin add https://github.com/NickmDrummer/omarchy-timer.git --enable --yes
+bash ~/.config/omarchy/plugins/nickmdrummer.timer/setup.sh
 ```
 
-Then enable the real blur (one line at the end of `~/.config/hypr/hyprland.lua`):
+The script adds one blur hook line to `~/.config/hypr/hyprland.lua`
+(with a backup, never duplicated) and reloads Hyprland. No shell restart
+needed. Manual alternative: append this line yourself, then `hyprctl reload`:
 
 ```lua
 dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/nickmdrummer.timer/timer-hypr.lua")
 ```
-
-and reload:
-
-```bash
-hyprctl reload
-omarchy-restart-shell
-```
-
-Without that hook the plugin still works, but the popup and floating
-window won't get frosted blur (flat translucent backgrounds instead).
 
 ## Remove
 
