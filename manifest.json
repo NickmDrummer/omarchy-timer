@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "nickmdrummer.timer",
   "name": "Timer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "nickmdrummer",
   "license": "MIT",
   "description": "Modern top-bar timer: countdown pill, JSON-editable presets, manual picker with +5/-5 and always-on-top floating mode with a gentle alarm.",
@@ -19,7 +19,8 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "sound": "On"
+      "sound": "On",
+      "theme": "Original"
     },
     "schema": [
       {
@@ -31,6 +32,16 @@
           "Off"
         ],
         "defaultValue": "On"
+      },
+      {
+        "key": "theme",
+        "type": "enum",
+        "label": "Theme",
+        "options": [
+          "Original",
+          "Omarchy"
+        ],
+        "defaultValue": "Original"
       }
     ]
   }

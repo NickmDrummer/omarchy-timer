@@ -50,6 +50,11 @@ BarWidget {
     return v === true || v === 1 || v === "On" || v === "on" || v === "true";
   }
 
+  // Theme mode: "Original" keeps the custom dark glass look; "Omarchy"
+  // follows the active Omarchy theme tokens (native-looking surfaces).
+  readonly property bool omarchyTheme: root.setting("theme", "Original") === "Omarchy"
+  readonly property bool lightTheme: Logic.isLight(root.bar ? root.bar.background : Color.background)
+
   // ---- paths ------------------------------------------------------------
   readonly property string homeDir: Quickshell.env("HOME")
   readonly property string runDir: {
@@ -365,98 +370,146 @@ BarWidget {
   }
 
   // Monitor geometry for the floating window jump across screens.
-  function refreshMonitors() {
-    if (!monitorsProc.running) monitorsProc.running = true;
+  // Quickshell.screens reports logical coordinates (scale already applied),
+  // exactly the space the layer surfaces and the pointer live in. Using
+  // hyprctl width/height here mixed physical pixels with the logical x/y
+  // and broke the neighbor detection on scaled displays.
+  function screenRects() {
+    var out = [];
+    var ss = Quickshell.screens || [];
+    for (var i = 0; i < ss.length; i++) {
+      var s = ss[i];
+      if (!s || !s.name) continue;
+      out.push({
+        name: String(s.name),
+        x: Math.round(s.x),
+        y: Math.round(s.y),
+        w: Math.round(s.width),
+        h: Math.round(s.height)
+      });
+    }
+    return out;
   }
 
-  function applyMonitors(text) {
-    try {
-      var arr = JSON.parse(String(text || "[]"));
-      var out = [];
-      for (var i = 0; i < arr.length; i++) {
-        if (!arr[i] || !arr[i].name) continue;
-        out.push({
-          name: String(arr[i].name),
-          x: Number(arr[i].x) || 0,
-          y: Number(arr[i].y) || 0,
-          w: Number(arr[i].width) || 0,
-          h: Number(arr[i].height) || 0
-        });
-      }
-      if (out.length > 0) root.monitorMap = out;
-    } catch (e) {}
+  function refreshMonitors() {
+    var list = root.screenRects();
+    if (list.length > 0) root.monitorMap = list;
+  }
+
+  function rectFor(name) {
+    if (!name) return null;
+    for (var i = 0; i < root.monitorMap.length; i++)
+      if (root.monitorMap[i].name === name) return root.monitorMap[i];
+    return null;
+  }
+
+  // Pointer position (local to the owner screen) -> absolute layout coords.
+  function globalPoint(lx, ly) {
+    var cur = root.rectFor(root.detachedScreen) || root.rectFor(root.screenName);
+    if (!cur) return { x: Number(lx) || 0, y: Number(ly) || 0 };
+    return { x: cur.x + (Number(lx) || 0), y: cur.y + (Number(ly) || 0) };
+  }
+
+  // Signed distance from the current monitor edge to the candidate.
+  function edgeGap(dir, cur, m) {
+    if (dir === "right") return m.x - (cur.x + cur.w);
+    if (dir === "left") return cur.x - (m.x + m.w);
+    if (dir === "down") return m.y - (cur.y + cur.h);
+    return cur.y - (m.y + m.h);
+  }
+
+  // How far the pointer line falls outside the candidate (0 = aligned).
+  function perpendicularGap(dir, m, absX, absY) {
+    var horizontal = (dir === "right" || dir === "left");
+    var p = horizontal ? absY : absX;
+    var lo = horizontal ? m.y : m.x;
+    var hi = horizontal ? (m.y + m.h) : (m.x + m.w);
+    if (p < lo) return lo - p;
+    if (p > hi) return p - hi;
+    return 0;
   }
 
   // Neighboring monitor in the given direction (map object or null).
-  function findNeighborObj(dir) {
-    var cur = null;
-    for (var i = 0; i < root.monitorMap.length; i++) {
-      if (root.monitorMap[i].name === root.detachedScreen) cur = root.monitorMap[i];
-    }
+  // Prefers the monitor the pointer is pushing towards; falls back to the
+  // nearest monitor centered in that direction so regular layouts work.
+  function findNeighborObj(dir, absX, absY) {
+    var cur = root.rectFor(root.detachedScreen);
     if (!cur) return null;
+    var px = Number(absX) || 0;
+    var py = Number(absY) || 0;
     var best = null;
-    var bestGap = 1e9;
-    for (var j = 0; j < root.monitorMap.length; j++) {
-      var m = root.monitorMap[j];
+    var bestScore = 1e18;
+    var i, m, gap, perp, score;
+    for (i = 0; i < root.monitorMap.length; i++) {
+      m = root.monitorMap[i];
       if (m.name === cur.name) continue;
-      var vOverlap = Math.min(cur.y + cur.h, m.y + m.h) - Math.max(cur.y, m.y);
-      var hOverlap = Math.min(cur.x + cur.w, m.x + m.w) - Math.max(cur.x, m.x);
-      var gap = 1e9;
-      var ok = false;
-      if (dir === "right" && vOverlap > 100) {
-        gap = m.x - (cur.x + cur.w);
-        ok = gap >= -64 && gap < 512;
-      } else if (dir === "left" && vOverlap > 100) {
-        gap = cur.x - (m.x + m.w);
-        ok = gap >= -64 && gap < 512;
-      } else if (dir === "down" && hOverlap > 100) {
-        gap = m.y - (cur.y + cur.h);
-        ok = gap >= -64 && gap < 512;
-      } else if (dir === "up" && hOverlap > 100) {
-        gap = cur.y - (m.y + m.h);
-        ok = gap >= -64 && gap < 512;
-      }
-      if (ok && gap < bestGap) { bestGap = gap; best = m; }
+      gap = root.edgeGap(dir, cur, m);
+      // Allow a few pixels of overlap: fractional layout positions.
+      if (gap < -8) continue;
+      perp = root.perpendicularGap(dir, m, px, py);
+      score = Math.max(0, gap) + perp * 1.5;
+      if (score < bestScore) { bestScore = score; best = m; }
+    }
+    if (best) return best;
+    // Fallback: closest monitor whose center lies in the pushed direction.
+    var cx = cur.x + cur.w / 2;
+    var cy = cur.y + cur.h / 2;
+    for (i = 0; i < root.monitorMap.length; i++) {
+      m = root.monitorMap[i];
+      if (m.name === cur.name) continue;
+      var dx = (m.x + m.w / 2) - cx;
+      var dy = (m.y + m.h / 2) - cy;
+      var inDir = (dir === "right" && dx > 0) || (dir === "left" && dx < 0)
+        || (dir === "down" && dy > 0) || (dir === "up" && dy < 0);
+      if (!inDir) continue;
+      score = Math.abs(dx) + Math.abs(dy) + Math.abs(root.edgeGap(dir, cur, m)) * 4;
+      if (score < bestScore) { bestScore = score; best = m; }
     }
     return best;
   }
 
-  // Landing position on the target monitor: same relative height,
-  // stuck to the crossing edge. Returns {x,y} or null.
-  function landingFor(dir, ptrX, ptrY, tgtName) {
-    var cur = null, tgt = null;
-    for (var i = 0; i < root.monitorMap.length; i++) {
-      if (root.monitorMap[i].name === root.detachedScreen) cur = root.monitorMap[i];
-      if (root.monitorMap[i].name === tgtName) tgt = root.monitorMap[i];
-    }
+  // Landing position inside the target monitor, in that screen's local
+  // coords. Keeps the pointer's relative position and sticks to the edge
+  // the card crossed.
+  function landingFor(dir, absX, absY, tgtName) {
+    var cur = root.rectFor(root.detachedScreen);
+    var tgt = root.rectFor(tgtName);
     if (!cur || !tgt) return null;
-    var px = Number(ptrX) || 0;
-    var py = Number(ptrY) || 0;
-    var half = 122; // half of the square card (244)
-    var lx = 12, ly = 12;
+    var card = 244;
+    var pad = 12;
+    var rx = cur.w > 0 ? ((Number(absX) || 0) - cur.x) / cur.w : 0.5;
+    var ry = cur.h > 0 ? ((Number(absY) || 0) - cur.y) / cur.h : 0.5;
+    rx = Math.max(0, Math.min(1, rx));
+    ry = Math.max(0, Math.min(1, ry));
+    var gx, gy;
     if (dir === "right") {
-      lx = 12;
-      ly = (cur.h > 0 ? (py / cur.h) : 0.5) * tgt.h - half;
+      gx = tgt.x + pad;
+      gy = tgt.y + ry * tgt.h - card / 2;
     } else if (dir === "left") {
-      lx = tgt.w - half * 2 - 12;
-      ly = (cur.h > 0 ? (py / cur.h) : 0.5) * tgt.h - half;
+      gx = tgt.x + tgt.w - card - pad;
+      gy = tgt.y + ry * tgt.h - card / 2;
     } else if (dir === "down") {
-      ly = 12;
-      lx = (cur.w > 0 ? (px / cur.w) : 0.5) * tgt.w - half;
+      gy = tgt.y + pad;
+      gx = tgt.x + rx * tgt.w - card / 2;
     } else {
-      ly = tgt.h - half * 2 - 12;
-      lx = (cur.w > 0 ? (px / cur.w) : 0.5) * tgt.w - half;
+      gy = tgt.y + tgt.h - card - pad;
+      gx = tgt.x + rx * tgt.w - card / 2;
     }
+    var lx = gx - tgt.x;
+    var ly = gy - tgt.y;
+    var maxX = Math.max(pad, tgt.w - card - pad);
+    var maxY = Math.max(pad, tgt.h - card - pad);
+    lx = Math.max(pad, Math.min(maxX, lx));
+    ly = Math.max(pad, Math.min(maxY, ly));
     return { x: Math.round(lx), y: Math.round(ly) };
   }
 
   // Moves the floating window to the neighboring monitor in the given direction,
-  // landing where the pointer crossed (ptr in current screen coords
-  // ). That screen's instance shows it there.
-  function hopFloating(dir, ptrX, ptrY) {
-    var best = root.findNeighborObj(dir);
+  // landing where the pointer crossed (absolute layout coords).
+  function hopFloating(dir, absX, absY) {
+    var best = root.findNeighborObj(dir, absX, absY);
     if (!best) return false;
-    var L = root.landingFor(dir, ptrX, ptrY, best.name);
+    var L = root.landingFor(dir, absX, absY, best.name);
     if (!L) return false;
     root.detachedScreen = best.name;
     root.landX = L.x;
@@ -485,13 +538,9 @@ BarWidget {
     root.writeState();
   }
 
-  Process {
-    id: monitorsProc
-    command: ["hyprctl", "monitors", "-j"]
-    stdout: StdioCollector { id: monitorsOut; waitForEnd: true }
-    onExited: function(code) {
-      if (code === 0) root.applyMonitors(monitorsOut.text);
-    }
+  Connections {
+    target: Quickshell
+    function onScreensChanged() { root.refreshMonitors(); }
   }
 
   Timer {
@@ -566,6 +615,19 @@ BarWidget {
     function status(): string {
       return JSON.stringify({ state: root.tState, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened });
     }
+    // Logical monitor layout (same units the floating window uses).
+    function screens(): string {
+      root.refreshMonitors();
+      return JSON.stringify(root.monitorMap);
+    }
+    // Moves the floating card to the neighboring monitor (scripting/debug).
+    function hop(dir: string): string {
+      if (!root.detached) return "not-detached";
+      var cur = root.rectFor(root.detachedScreen);
+      var cx = cur ? cur.x + cur.w / 2 : 0;
+      var cy = cur ? cur.y + cur.h / 2 : 0;
+      return root.hopFloating(String(dir), cx, cy) ? "ok" : "no-neighbor";
+    }
   }
 
   // ---- pill in the bar (glass accent + green heartbeat) ------------------
@@ -591,18 +653,21 @@ BarWidget {
   }
   readonly property color topbarBg: root.bar ? root.bar.background : Color.background
   readonly property color topbarFg: root.bar ? root.bar.foreground : Color.foreground
-  // Accent ONLY while the timer is active (running). When idle,
-  // paused or finished: topbar background + accent border.
+  // Accent fill ONLY while the timer is active (running). Idle/paused use
+  // the topbar background (slightly darker on light themes) and no border;
+  // Omarchy mode drops the glass entirely, like a native bar widget.
   readonly property color pillBg: {
     if (root.tState === "finished") return Util.alpha(root.bar ? root.bar.urgent : Color.urgent, 0.62);
     if (root.urgentPhase) return Qt.rgba(0.10, 0.45, 0.24, 0.78);
     if (root.tState === "running") return Util.alpha(root.accent, 0.55);
+    if (root.omarchyTheme) return "transparent";
+    if (root.lightTheme) return root.shade(root.topbarBg, 0.10);
     return root.topbarBg;
   }
-  readonly property color pillBorder: {
-    if (root.tState === "finished") return (root.bar ? root.bar.urgent : Color.urgent);
-    if (root.urgentPhase) return Qt.rgba(0.29, 0.87, 0.5, 0.9);
-    return Util.alpha(root.accent, 0.9);
+  // Darkens a color while keeping its alpha (light-theme scrim).
+  function shade(c, amount) {
+    var k = 1 - Math.max(0, Math.min(1, Number(amount) || 0));
+    return Qt.rgba(c.r * k, c.g * k, c.b * k, c.a === undefined ? 1 : c.a);
   }
   readonly property string face: root.bar && root.bar.fontFamily ? root.bar.fontFamily : Style.font.family
 
@@ -642,8 +707,8 @@ BarWidget {
       height: Math.min(parent.height - 6, Style.space(24))
       radius: height / 2
       color: root.pillBg
-      border.width: 1
-      border.color: root.pillBorder
+      border.width: 0
+      border.color: "transparent"
 
       // Green heartbeat: one flash per second in the last 5 s.
       Rectangle {
@@ -720,6 +785,7 @@ BarWidget {
   Component.onCompleted: {
     root.detached = root.setting("detached", false) === true;
     root.updateScreenName();
+    root.refreshMonitors();
     // After a restart, the floating window returns to its screen if still active.
     if (root.detached && root.detachedScreen === "") root.detachedScreen = root.screenName;
     // The PillButton path may not be ready yet; retry one beat later.

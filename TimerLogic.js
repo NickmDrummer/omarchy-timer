@@ -75,3 +75,17 @@ function cleanPresets(raw) {
 function stateFile(dir) {
   return dir + "/state.json";
 }
+
+// Perceived brightness of a QML color (0..1). Used to pick the glass
+// density: light themes need a darker scrim so content stays readable.
+function luminance(c) {
+  if (!c) return 0;
+  var r = Number(c.r) || 0;
+  var g = Number(c.g) || 0;
+  var b = Number(c.b) || 0;
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function isLight(c) {
+  return luminance(c) > 0.55;
+}

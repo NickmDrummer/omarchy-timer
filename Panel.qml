@@ -19,9 +19,15 @@ Panel {
   property var hostWidget: null
   readonly property var barIdentity: hostWidget || root
 
-  readonly property color fg: bar ? bar.foreground : Color.foreground
+  readonly property bool omarchyTheme: hostWidget ? hostWidget.omarchyTheme === true : false
+  readonly property bool lightTheme: hostWidget ? hostWidget.lightTheme === true : false
+  // Original mode has its own palette (white ink over dark glass) so it keeps
+  // the same identity on light themes; Omarchy mode follows theme tokens.
+  readonly property color fg: root.omarchyTheme ? Color.popups.text : Qt.rgba(1, 1, 1, 0.92)
   readonly property string face: bar && bar.fontFamily ? bar.fontFamily : Style.font.family
-  readonly property color glassBlack: Qt.rgba(0, 0, 0, 0.42)
+  // A bit denser on light themes so the white ink keeps its contrast.
+  readonly property color glassBlack: Qt.rgba(0, 0, 0, (!root.omarchyTheme && root.lightTheme) ? 0.52 : 0.42)
+  function ink(a) { return Util.alpha(root.fg, a); }
 
   property bool editing: false
   property string newLabel: ""
@@ -85,6 +91,18 @@ Panel {
     if (hostWidget) hostWidget.startSeconds(root.pickSec);
   }
 
+  // Persists a bar widget setting (same path the shell uses for the bar).
+  function setSetting(key, value) {
+    if (!hostWidget) return;
+    var entry = { id: hostWidget.moduleName };
+    for (var k in hostWidget.settings) if (k !== "id") entry[k] = hostWidget.settings[k];
+    entry[key] = value;
+    hostWidget.settings = entry;
+    if (hostWidget.bar && hostWidget.bar.shell && typeof hostWidget.bar.shell.updateEntryInline === "function") {
+      try { hostWidget.bar.shell.updateEntryInline(hostWidget.moduleName, entry); } catch (e) {}
+    }
+  }
+
   TimerPopup {
     id: panel
     anchorItem: root.anchorItem
@@ -93,8 +111,10 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     cardRadius: 20
-    cardColor: Qt.rgba(0, 0, 0, 0.42)
-    borderSpec: Border.none()
+    cardColor: root.omarchyTheme ? Color.popups.background : root.glassBlack
+    borderSpec: root.omarchyTheme
+      ? Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(1)))
+      : Border.none()
     contentWidth: panel.fittedContentWidth(Style.space(344))
     contentHeight: panel.fittedContentHeight(body.implicitHeight)
 
@@ -227,7 +247,7 @@ Panel {
             anchors.bottomMargin: 10
             height: 4
             radius: 2
-            color: Qt.rgba(1, 1, 1, 0.12)
+            color: root.ink(0.12)
             Rectangle {
               anchors.left: parent.left
               anchors.top: parent.top
@@ -235,7 +255,7 @@ Panel {
               width: parent.width * root.progress
               radius: 2
               color: (hostWidget && hostWidget.urgentPhase)
-                ? Qt.rgba(0.29, 0.87, 0.5, 0.9) : Qt.rgba(1, 1, 1, 0.75)
+                ? Qt.rgba(0.29, 0.87, 0.5, 0.9) : root.ink(0.75)
             }
           }
         }
@@ -334,9 +354,10 @@ Panel {
               width: chipLabel.implicitWidth + 28
               height: Style.space(34)
               radius: 17
-              color: chipHover.hovered ? Qt.rgba(1,1,1,0.16) : Qt.rgba(0,0,0,0.5)
+              color: chipHover.hovered ? root.ink(0.16)
+                : (root.omarchyTheme ? root.ink(0.05) : Qt.rgba(0, 0, 0, 0.5))
               border.width: 1
-              border.color: Qt.rgba(1, 1, 1, 0.14)
+              border.color: root.ink(0.14)
 
               Row {
                 id: chipRow
@@ -396,9 +417,9 @@ Panel {
               width: (parent.width - Style.space(8)) / 2
               height: Style.space(32)
               radius: Style.cornerRadius
-              color: Qt.rgba(1, 1, 1, 0.06)
+              color: root.ink(0.06)
               border.width: 1
-              border.color: editLabelInput.activeFocus ? Qt.rgba(1,1,1,0.35) : Qt.rgba(1,1,1,0.14)
+              border.color: root.ink(editLabelInput.activeFocus ? 0.35 : 0.14)
               TextInput {
                 id: editLabelInput
                 anchors.fill: parent
@@ -481,9 +502,9 @@ Panel {
               width: parent.width - Style.space(8) - addMin.width - addBtn.width
               height: Style.space(32)
               radius: Style.cornerRadius
-              color: Qt.rgba(1, 1, 1, 0.06)
+              color: root.ink(0.06)
               border.width: 1
-              border.color: newLabelInput.activeFocus ? Qt.rgba(1,1,1,0.35) : Qt.rgba(1,1,1,0.14)
+              border.color: root.ink(newLabelInput.activeFocus ? 0.35 : 0.14)
               TextInput {
                 id: newLabelInput
                 anchors.fill: parent
@@ -618,6 +639,47 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
+        // ---- theme mode ---------------------------------------------------
+        // Original keeps the custom dark glass; Omarchy follows the active
+        // theme tokens (native look, and as much blur as the theme wants).
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Theme:"
+            color: Util.alpha(root.fg, 0.55)
+            font.family: root.face
+            font.pixelSize: Style.font.bodySmall
+          }
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Original"
+            color: root.omarchyTheme ? Util.alpha(root.fg, 0.45) : root.fg
+            font.family: root.face
+            font.pixelSize: Style.font.bodySmall
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { acceptedButtons: Qt.LeftButton; onTapped: root.setSetting("theme", "Original") }
+          }
+          ToggleRow {
+            width: 36
+            height: Style.space(20)
+            on: root.omarchyTheme
+            fg: root.fg
+            face: root.face
+            onToggled: function(v) { root.setSetting("theme", v ? "Omarchy" : "Original"); }
+          }
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Omarchy"
+            color: root.omarchyTheme ? root.fg : Util.alpha(root.fg, 0.45)
+            font.family: root.face
+            font.pixelSize: Style.font.bodySmall
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { acceptedButtons: Qt.LeftButton; onTapped: root.setSetting("theme", "Omarchy") }
+          }
+        }
+
         // ---- footer: sound + floating --------------------------------------
         Row {
           width: parent.width
@@ -629,14 +691,7 @@ Panel {
             fg: root.fg
             face: root.face
             onToggled: function(v) {
-              if (!hostWidget) return;
-              var entry = { id: hostWidget.moduleName };
-              for (var k in hostWidget.settings) if (k !== "id") entry[k] = hostWidget.settings[k];
-              entry.sound = v;
-              hostWidget.settings = entry;
-              if (hostWidget.bar && hostWidget.bar.shell && typeof hostWidget.bar.shell.updateEntryInline === "function") {
-                try { hostWidget.bar.shell.updateEntryInline(hostWidget.moduleName, entry); } catch (e) {}
-              }
+              root.setSetting("sound", v);
             }
           }
           ToggleRow {
@@ -676,11 +731,11 @@ Panel {
     radius: 10
     color: {
       if (tbtn.danger) return tbtnHover.hovered ? Qt.rgba(1, 0.35, 0.35, 0.22) : Qt.rgba(1, 0.35, 0.35, 0.10);
-      if (tbtn.primary) return tbtnHover.hovered ? Qt.rgba(1,1,1,0.24) : Qt.rgba(1,1,1,0.13);
-      return tbtnHover.hovered ? Qt.rgba(1,1,1,0.14) : Qt.rgba(1,1,1,0.06);
+      if (tbtn.primary) return root.ink(tbtnHover.hovered ? 0.24 : 0.13);
+      return root.ink(tbtnHover.hovered ? 0.14 : 0.06);
     }
     border.width: 1
-    border.color: Qt.rgba(1, 1, 1, tbtn.primary ? 0.22 : 0.12)
+    border.color: root.ink(tbtn.primary ? 0.22 : 0.12)
     Text {
       anchors.centerIn: parent
       text: tbtn.label
@@ -707,9 +762,9 @@ Panel {
     signal changed(int v)
     height: title !== "" ? Style.space(64) : Style.space(32)
     radius: Style.cornerRadius
-    color: Qt.rgba(0, 0, 0, 0.5)
+    color: root.omarchyTheme ? root.ink(0.05) : Qt.rgba(0, 0, 0, 0.5)
     border.width: 1
-    border.color: Qt.rgba(1, 1, 1, 0.12)
+    border.color: root.ink(0.12)
     function emitClamped(v) {
       v = Math.max(step.min, Math.min(step.max, v));
       if (v !== step.value) step.changed(v);
@@ -778,14 +833,14 @@ Panel {
         width: 36
         height: 20
         radius: 10
-        color: trow.on ? Qt.rgba(1,1,1,0.75) : Qt.rgba(1,1,1,0.12)
+        color: root.ink(trow.on ? 0.75 : 0.12)
         Rectangle {
           x: trow.on ? parent.width - width - 3 : 3
           anchors.verticalCenter: parent.verticalCenter
           width: 14
           height: 14
           radius: 7
-          color: trow.on ? "black" : "white"
+          color: trow.on ? (root.omarchyTheme ? Color.popups.background : "black") : root.fg
           Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
         }
         HoverHandler { cursorShape: Qt.PointingHandCursor }

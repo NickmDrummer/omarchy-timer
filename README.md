@@ -1,7 +1,15 @@
 # Timer — countdown plugin for Omarchy
 
+[![Timer preview](preview.png)](https://plugins.omarchy.org/plugin.html?id=nickmdrummer.timer)
+
+*Original mode: custom glass + blur. Omarchy theme mode:*
+
+<img src="preview-omarchy.png" alt="Timer following the Omarchy theme" width="70%">
+
 Countdown pill on the top bar, with a gentle alarm,
 editable presets and an always-on-top floating mode.
+
+Listed on the [Omarchy plugin marketplace](https://plugins.omarchy.org/plugin.html?id=nickmdrummer.timer).
 
 ## Install
 
@@ -21,11 +29,13 @@ dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/nickmdrummer.timer/timer-h
 ## Remove
 
 ```bash
+bash ~/.config/omarchy/plugins/nickmdrummer.timer/setup.sh --remove
 omarchy plugin remove nickmdrummer.timer --yes
 ```
 
-This keeps your presets (`~/.config/nickmdrummer-timer/presets.json`) and
-the Hyprland hook line (delete it manually if you want a clean removal).
+`--remove` deletes only the marked blur block (with a backup) and reloads
+Hyprland, so your config is left clean. Your presets
+(`~/.config/nickmdrummer-timer/presets.json`) are kept.
 
 ## Dependencies
 
@@ -64,6 +74,10 @@ All standard on Omarchy, no setup needed:
   ghost on the neighboring monitor, and release to hop there — the real
   card lands exactly where the ghost was (layer windows live on one
   output, so the press itself can't travel). The final heartbeat only hits the typeface.
+- **Theme mode** (`Theme: Original [toggle] Omarchy` in the panel):
+  **Original** keeps the custom dark glass; **Omarchy** uses the active
+  theme's popup tokens (native look and the theme's own blur amount).
+  In Original mode the glass gets denser on light themes for contrast.
 - **Alarm**: three-note chime (~3 s) at high volume, three passes +
   critical notification.
 - Real blur via `timer-hypr.lua` (hook in `~/.config/hypr/hyprland.lua`,
@@ -71,6 +85,14 @@ All standard on Omarchy, no setup needed:
   so only the card gets frosted — never the whole desktop or the corners.
 - State syncs across monitors via
   `$XDG_RUNTIME_DIR/nickmdrummer-timer/state.json`.
+
+## Settings
+
+Stored in the bar entry of `~/.config/omarchy/shell.json` and editable from
+the panel footer:
+
+- `sound` — `On` / `Off` for the alarm.
+- `theme` — `Original` (custom dark glass) or `Omarchy` (theme tokens).
 
 ## IPC
 
@@ -80,5 +102,10 @@ omarchy-shell nickmdrummer.timer start 25
 omarchy-shell nickmdrummer.timer stop
 omarchy-shell nickmdrummer.timer detach
 omarchy-shell nickmdrummer.timer attach
+omarchy-shell nickmdrummer.timer hop left|right|up|down
+omarchy-shell nickmdrummer.timer screens
 omarchy-shell nickmdrummer.timer status
 ```
+
+`screens` prints the logical monitor layout the floating window uses;
+`hop` moves the floating card to the neighboring monitor.

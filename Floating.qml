@@ -55,7 +55,18 @@ PanelWindow {
   }
 
   readonly property string face: host ? host.face : Style.font.family
-  readonly property color ink: host && host.bar ? host.bar.foreground : Color.foreground
+  readonly property bool omarchyTheme: host && host.omarchyTheme === true
+  readonly property bool lightTheme: host && host.lightTheme === true
+  readonly property color ink: root.omarchyTheme ? Color.popups.text : Qt.rgba(1, 1, 1, 0.94)
+  // Original mode: dark glass, a bit denser on light themes. Omarchy mode:
+  // the theme popup surface, so it looks native (and the compositor blur
+  // is as subtle as the theme intends).
+  readonly property color cardColor: root.omarchyTheme
+    ? Color.popups.background
+    : Qt.rgba(0, 0, 0, root.lightTheme ? 0.44 : 0.34)
+  readonly property color edgeColor: root.omarchyTheme
+    ? Util.alpha(Color.popups.border, 0.55)
+    : Qt.rgba(1, 1, 1, 0.14)
   readonly property color beatGreen: Qt.rgba(0.29, 0.87, 0.5, 1)
   readonly property bool phase: host && host.urgentPhase === true
   readonly property real screenW: root.screen ? root.screen.width : 1920
@@ -130,11 +141,11 @@ PanelWindow {
     width: 244
     height: 244
     radius: 30
-    color: Qt.rgba(0, 0, 0, 0.34)
+    color: root.cardColor
     border.width: 1
     border.color: (host && host.tState === "finished")
       ? (host.bar ? host.bar.urgent : Color.urgent)
-      : Qt.rgba(1, 1, 1, 0.14)
+      : root.edgeColor
 
     // Back to the bar (top right).
     Text {
@@ -234,10 +245,12 @@ PanelWindow {
             if (typeof host.findNeighborObj !== "function"
                 || typeof host.landingFor !== "function"
                 || typeof host.writePreview !== "function") { unpreview(); return; }
-            var nb = host.findNeighborObj(pdir);
+            var g = typeof host.globalPoint === "function"
+              ? host.globalPoint(p.x, p.y) : { x: p.x, y: p.y };
+            var nb = host.findNeighborObj(pdir, g.x, g.y);
             if (!nb) { unpreview(); return; }
             if (Date.now() - lastPreview < 120) return;
-            var L = host.landingFor(pdir, p.x, p.y, nb.name);
+            var L = host.landingFor(pdir, g.x, g.y, nb.name);
             if (!L) { unpreview(); return; }
             lastPreview = Date.now();
             previewMine = true;
@@ -289,7 +302,10 @@ PanelWindow {
             // Monitor jump by pushing against the edge (if there is a neighbor),
             // landing where the pointer is.
             if (dir !== "" && host && typeof host.hopFloating === "function") {
-              if (host.hopFloating(dir, dragZone.lastPX, dragZone.lastPY)) return;
+              var g = typeof host.globalPoint === "function"
+                ? host.globalPoint(dragZone.lastPX, dragZone.lastPY)
+                : { x: dragZone.lastPX, y: dragZone.lastPY };
+              if (host.hopFloating(dir, g.x, g.y)) return;
             }
           }
         }
@@ -360,9 +376,9 @@ PanelWindow {
     width: 244
     height: 244
     radius: 30
-    color: Qt.rgba(0, 0, 0, 0.34)
+    color: root.cardColor
     border.width: 1
-    border.color: Qt.rgba(1, 1, 1, 0.14)
+    border.color: root.edgeColor
 
     Column {
       anchors.centerIn: parent
