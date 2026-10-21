@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "nickmdrummer.timer",
   "name": "Timer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "nickmdrummer",
   "license": "MIT",
   "description": "Modern top-bar timer: countdown pill, JSON-editable presets, manual picker with +5/-5 and always-on-top floating mode with a gentle alarm.",

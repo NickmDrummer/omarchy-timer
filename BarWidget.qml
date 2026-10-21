@@ -57,11 +57,20 @@ BarWidget {
 
   // ---- paths ------------------------------------------------------------
   readonly property string homeDir: Quickshell.env("HOME")
+  // XDG_RUNTIME_DIR is private per user (0700) by spec. If a session lacks
+  // it, fall back to the user's own state dir: never a shared path like
+  // /tmp, where another local user could precreate state.json.
   readonly property string runDir: {
-    var r = Quickshell.env("XDG_RUNTIME_DIR");
-    return (r && r !== "" ? r : "/tmp") + "/nickmdrummer-timer";
+    var runtime = Quickshell.env("XDG_RUNTIME_DIR");
+    if (runtime && runtime !== "") return runtime + "/nickmdrummer-timer";
+    var state = Quickshell.env("XDG_STATE_HOME");
+    var base = (state && state !== "") ? state : (root.homeDir + "/.local/state");
+    return base + "/nickmdrummer-timer";
   }
-  readonly property string statePath: root.runDir + "/state.json"
+  // File-based sync stays off until the run dir passes the ownership/type
+  // checks below, so a hostile path is never read into the shell.
+  property bool runDirSafe: false
+  readonly property string statePath: root.runDirSafe ? (root.runDir + "/state.json") : ""
   readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (root.homeDir + "/.config")) + "/nickmdrummer-timer"
   readonly property string presetsPath: root.configDir + "/presets.json"
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
@@ -154,17 +163,19 @@ BarWidget {
     onLoadFailed: root.writeState()
     onFileChanged: stateApplyDebounce.restart()
   }
-
   Timer {
     id: stateApplyDebounce
     interval: 120
     onTriggered: {
+      if (!root.runDirSafe) return;
       stateView.reload();
       root.applyStateText(stateView.text());
     }
   }
 
   function applyStateText(text) {
+    // Never consume sync data unless the run dir passed validation.
+    if (!root.runDirSafe) return;
     var o = null;
     try { o = JSON.parse(String(text || "")); } catch (e) { return; }
     if (!o || typeof o !== "object") return;
@@ -205,6 +216,7 @@ BarWidget {
   }
 
   function writeState() {
+    if (!root.runDirSafe) return;
     var stamp = Date.now() + Math.random();
     root.lastApplied = stamp;
     root.lastWriter = root.moduleName;
@@ -360,10 +372,40 @@ BarWidget {
     command: ["bash", root.alarmScript, "--silent"]
   }
 
+  // Creates/validates the private dirs. Refuses symlinks, foreign ownership
+  // and non-regular state files, and locks permissions down to 0700.
+  readonly property string runDirSetup: [
+    "set -eu",
+    "umask 077",
+    "dir=\"$0\"",
+    "cfg=\"$1\"",
+    "if [ -L \"$dir\" ]; then echo 'run dir is a symlink' >&2; exit 1; fi",
+    "if [ -e \"$dir\" ] && [ ! -d \"$dir\" ]; then echo 'run dir is not a directory' >&2; exit 1; fi",
+    "install -d -m 700 -- \"$dir\"",
+    "[ -O \"$dir\" ] || { echo 'run dir is not owned by this user' >&2; exit 1; }",
+    "chmod 700 -- \"$dir\"",
+    "state=\"$dir/state.json\"",
+    "if [ -e \"$state\" ] || [ -L \"$state\" ]; then",
+    "  if [ ! -f \"$state\" ] || [ -L \"$state\" ] || [ ! -O \"$state\" ]; then",
+    "    rm -f -- \"$state\"",
+    "  fi",
+    "fi",
+    "if [ -f \"$state\" ]; then chmod 600 -- \"$state\"; fi",
+    "if [ -L \"$cfg\" ]; then echo 'config dir is a symlink' >&2; exit 1; fi",
+    "if [ -e \"$cfg\" ] && [ ! -d \"$cfg\" ]; then echo 'config dir is not a directory' >&2; exit 1; fi",
+    "install -d -m 700 -- \"$cfg\"",
+    "[ -O \"$cfg\" ] || { echo 'config dir is not owned by this user' >&2; exit 1; }"
+  ].join("\n")
+
   Process {
     id: mkdirProc
-    command: ["bash", "-c", "mkdir -p \"$0\" \"$1\"", root.runDir, root.configDir]
+    command: ["bash", "-c", root.runDirSetup, root.runDir, root.configDir]
     onExited: function(code) {
+      root.runDirSafe = (code === 0);
+      if (!root.runDirSafe) {
+        console.warn("nickmdrummer.timer: unsafe state dir, cross-monitor sync disabled");
+        return;
+      }
       presetsView.reload();
       stateView.reload();
     }
@@ -613,7 +655,7 @@ BarWidget {
     function detach(): void { root.setDetached(true); }
     function attach(): void { root.setDetached(false); }
     function status(): string {
-      return JSON.stringify({ state: root.tState, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened });
+      return JSON.stringify({ state: root.tState, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened, sync: root.runDirSafe });
     }
     // Logical monitor layout (same units the floating window uses).
     function screens(): string {

@@ -83,8 +83,11 @@ All standard on Omarchy, no setup needed:
 - Real blur via `timer-hypr.lua` (hook in `~/.config/hypr/hyprland.lua`,
   reload with `hyprctl reload`): blur + `ignore_alpha 0.3` per namespace,
   so only the card gets frosted — never the whole desktop or the corners.
-- State syncs across monitors via
-  `$XDG_RUNTIME_DIR/nickmdrummer-timer/state.json`.
+- State syncs across monitors via a private file in
+  `$XDG_RUNTIME_DIR/nickmdrummer-timer/state.json` (0700 dir). If the session
+  has no runtime dir it falls back to `~/.local/state/nickmdrummer-timer`,
+  and the plugin validates ownership and file type before reading it
+  (sync is disabled instead of trusting a foreign path).
 
 ## Settings
 
