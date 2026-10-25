@@ -306,6 +306,18 @@ BarWidget {
     root.writeState();
   }
 
+  // Persists a bar-widget setting (same path the shell uses for the bar) and
+  // updates the live instances, so the panel reflects it without a restart.
+  function setSetting(key, value) {
+    var entry = { id: root.moduleName };
+    for (var k in root.settings) if (k !== "id") entry[k] = root.settings[k];
+    entry[key] = value;
+    root.settings = entry;
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function") {
+      try { root.bar.shell.updateEntryInline(root.moduleName, entry); } catch (e) {}
+    }
+  }
+
   function startStaged() {
     if (root.mode === "pomodoro") { root.startPomodoro(); return; }
     root.startSeconds(root.stagedSec);
