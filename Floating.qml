@@ -14,7 +14,15 @@ PanelWindow {
   required property var host
 
   screen: {
-    // Anchor to the screen of the bar hosting the widget.
+    // Resolve the output by name from Quickshell.screens. Deriving it from
+    // the bar button's window broke after an Omarchy update (WidgetButton no
+    // longer exposes a per-output QsWindow), which pinned the card to the
+    // first monitor and made the cross-monitor hop look dead.
+    var target = host ? String(host.screenName || "") : "";
+    var list = Quickshell.screens || [];
+    for (var i = 0; i < list.length; i++) {
+      if (target !== "" && list[i] && String(list[i].name) === target) return list[i];
+    }
     try {
       var w = host && host.pillButton ? host.pillButton.QsWindow.window : null;
       return w && w.screen ? w.screen : null;
