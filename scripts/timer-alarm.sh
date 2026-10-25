@@ -12,7 +12,21 @@ exec 9>"$LOCK"
 flock -n 9 || exit 0
 
 SILENT=0
-[[ "${1:-}" == "--silent" ]] && SILENT=1
+TITLE="Timer"
+BODY="Time's up"
+URGENCY="critical"
+# Optional overrides let pomodoro phases announce themselves; with no
+# arguments the timer alarm behaves exactly as before.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --silent) SILENT=1; shift ;;
+    --title) TITLE="${2:-$TITLE}"; shift 2 ;;
+    --body) BODY="${2:-$BODY}"; shift 2 ;;
+    --urgency) URGENCY="${2:-$URGENCY}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ "$URGENCY" =~ ^(low|normal|critical)$ ]] || URGENCY="critical"
 
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/nickmdrummer-timer"
 CHIME="$CACHE/chime-v3.wav"
@@ -80,4 +94,4 @@ if [[ $SILENT -eq 0 ]]; then
 fi
 
 command -v notify-send >/dev/null 2>&1 && \
-  notify-send "Timer" "Time's up" -u critical -t 15000 2>/dev/null || true
+  notify-send "$TITLE" "$BODY" -u "$URGENCY" -t 15000 2>/dev/null || true

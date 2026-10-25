@@ -20,6 +20,19 @@ BarWidget {
   property int remainingSec: 600
   property double endAt: 0
   property int stagedSec: 600
+  // Timer staged value is remembered while pomodoro mode borrows stagedSec.
+  property int timerStagedSec: 600
+  // ---- pomodoro ----------------------------------------------------------
+  // Same countdown engine; pomodoro only changes what happens at zero.
+  // mode: "timer" | "pomodoro". phase: focus | short | long.
+  // pomoDone counts COMPLETED focus blocks in the current set (0..cycles),
+  // so a skipped focus block never counts as done.
+  property string mode: "timer"
+  property string phase: "focus"
+  property int pomoDone: 0
+  // Only the instance on this screen advances phases and rings, so two
+  // bars never complete the same phase twice.
+  property string pomoOwner: ""
   property bool detached: false
   // Screen owning the floating window: only that instance shows it (just one).
   property string detachedScreen: ""
@@ -88,6 +101,13 @@ BarWidget {
     else root.presets = Logic.defaultPresets();
     root.pomodoro = Logic.cleanPomodoro(parsed ? parsed.pomodoro : null);
     root.presetsReady = true;
+    // External config edits retarget an idle pomodoro display, but never
+    // rewrite the shared state (that would bounce between monitors).
+    if (root.mode === "pomodoro" && root.tState === "idle") {
+      root.stagedSec = root.pomodoro.focusSec;
+      root.totalSec = root.stagedSec;
+      root.remainingSec = root.stagedSec;
+    }
   }
 
   function savePresets() {
@@ -197,6 +217,18 @@ BarWidget {
     // Do not overwrite an already-alarmed local finished with a stale echo.
     root.lastApplied = stamp;
     root.lastWriter = String(o.writer || "");
+    var mode = o.mode === "pomodoro" ? "pomodoro" : "timer";
+    if (mode !== root.mode) {
+      // Keep each mode's own staged duration without writing state back.
+      if (mode === "pomodoro") root.timerStagedSec = root.stagedSec;
+      else root.stagedSec = root.timerStagedSec;
+      root.mode = mode;
+    }
+    var phase = String(o.phase || "focus");
+    if (["focus", "short", "long"].indexOf(phase) < 0) phase = "focus";
+    root.phase = phase;
+    root.pomoDone = Math.max(0, Math.min(root.pomodoro.cyclesBeforeLong, Math.round(Number(o.done) || 0)));
+    root.pomoOwner = String(o.owner || "");
     var st = String(o.state || "idle");
     if (["idle", "running", "paused", "finished"].indexOf(st) < 0) st = "idle";
     var total = Logic.clampSeconds(o.total);
@@ -222,7 +254,11 @@ BarWidget {
       root.remainingSec = Math.min(rem, 43200);
     }
     if (root.tState !== "finished" || st !== "running") root.tState = st;
-    if (st === "idle") root.stagedSec = Logic.clampSeconds(o.staged !== undefined ? o.staged : total);
+    if (st === "idle") {
+      root.stagedSec = root.mode === "pomodoro"
+        ? root.pomodoro.focusSec
+        : Logic.clampSeconds(o.staged !== undefined ? o.staged : total);
+    }
     // If we load a "finished" state (e.g. shell restart), still calm it down.
     if (st === "finished") finishCalm.restart();
     else finishCalm.stop();
@@ -239,6 +275,10 @@ BarWidget {
       total: root.totalSec,
       remaining: root.remainingSec,
       staged: root.stagedSec,
+      mode: root.mode,
+      phase: root.phase,
+      done: root.pomoDone,
+      owner: root.pomoOwner,
       endAt: root.endAt,
       detached: root.detached,
       detachedScreen: root.detachedScreen,
@@ -266,7 +306,122 @@ BarWidget {
     root.writeState();
   }
 
-  function startStaged() { root.startSeconds(root.stagedSec); }
+  function startStaged() {
+    if (root.mode === "pomodoro") { root.startPomodoro(); return; }
+    root.startSeconds(root.stagedSec);
+  }
+
+  // ---- pomodoro engine ---------------------------------------------------
+  function phaseSeconds(phase) {
+    var cfg = root.pomodoro;
+    if (phase === "short") return cfg.shortSec;
+    if (phase === "long") return cfg.longSec;
+    return cfg.focusSec;
+  }
+
+  function setMode(m) {
+    var next = (m === "pomodoro") ? "pomodoro" : "timer";
+    if (next === root.mode) return;
+    finishCalm.stop();
+    if (next === "pomodoro") {
+      root.timerStagedSec = root.stagedSec;
+      root.mode = "pomodoro";
+      root.pomoOwner = root.screenName;
+      root.stagedSec = root.pomodoro.focusSec;
+    } else {
+      root.mode = "timer";
+      root.pomoOwner = "";
+      root.stagedSec = root.timerStagedSec;
+    }
+    root.phase = "focus";
+    root.pomoDone = 0;
+    root.tState = "idle";
+    root.endAt = 0;
+    root.totalSec = root.stagedSec;
+    root.remainingSec = root.stagedSec;
+    root.writeState();
+  }
+
+  // True only on the instance allowed to advance phases. If the recorded
+  // owner screen is gone (unplugged, shell restart) or stalled, the first
+  // screen in alphabetical order takes over.
+  function pomoDriver() {
+    if (root.pomoOwner !== "" && root.pomoOwner === root.screenName) return true;
+    root.refreshMonitors();
+    var names = [];
+    for (var i = 0; i < root.monitorMap.length; i++) names.push(root.monitorMap[i].name);
+    if (names.length === 0) return root.pomoOwner === "";
+    names.sort();
+    if (names[0] !== root.screenName) return false;
+    if (root.pomoOwner === "") return true;
+    if (!root.rectFor(root.pomoOwner)) return true;
+    return root.endAt > 0 && (Date.now() - root.endAt) > 4000;
+  }
+
+  // running=false leaves the next phase paused, waiting for a click.
+  function enterPhase(phase, running) {
+    finishCalm.stop();
+    root.phase = phase;
+    var s = root.phaseSeconds(phase);
+    root.totalSec = s;
+    root.remainingSec = s;
+    if (running) {
+      root.endAt = Date.now() + s * 1000;
+      root.tState = "running";
+    } else {
+      root.endAt = 0;
+      root.tState = "paused";
+    }
+    root.writeState();
+  }
+
+  function startPomodoro() {
+    root.pomoDone = 0;
+    root.pomoOwner = root.screenName;
+    root.enterPhase("focus", true);
+  }
+
+  function pomodoroReset() {
+    root.pomoDone = 0;
+    root.pomoOwner = root.screenName;
+    root.enterPhase("focus", false);
+  }
+
+  // A phase reached zero on the driving instance: chime, notify, advance.
+  function completePhase() {
+    var cfg = root.pomodoro;
+    var ended = root.phase;
+    if (ended === "focus") root.pomoDone = Math.min(cfg.cyclesBeforeLong, root.pomoDone + 1);
+    var next;
+    if (ended === "focus") next = (root.pomoDone >= cfg.cyclesBeforeLong) ? "long" : "short";
+    else next = "focus";
+    if (ended === "long") root.pomoDone = 0;
+    var auto = (next === "focus") ? cfg.autoStartFocus : cfg.autoStartBreaks;
+    var mins = Math.round(root.phaseSeconds(next) / 60);
+    root.alarmTitle = "Pomodoro";
+    if (ended === "focus") {
+      root.alarmBody = (next === "long") ? "Cycle complete — long break" : "Focus done — " + mins + " min break";
+      root.alarmUrgency = (next === "long") ? "critical" : "normal";
+    } else {
+      root.alarmBody = "Break over — back to focus";
+      root.alarmUrgency = "normal";
+    }
+    if (root.soundOn) alarmProc.running = true;
+    else notifyProc.running = true;
+    root.enterPhase(next, auto);
+  }
+
+  // Skip advances without ringing; an early skipped focus block does not
+  // count as completed, so the set does not move forward either.
+  function skipPhase() {
+    if (root.mode !== "pomodoro") return;
+    if (root.phase === "focus") {
+      root.enterPhase(root.pomoDone >= root.pomodoro.cyclesBeforeLong ? "long" : "short", false);
+    } else {
+      if (root.phase === "long") root.pomoDone = 0;
+      root.enterPhase("focus", false);
+    }
+  }
 
   function pause() {
     if (root.tState !== "running") return;
@@ -294,6 +449,11 @@ BarWidget {
   function resetAll() {
     finishCalm.stop();
     root.tState = "idle";
+    if (root.mode === "pomodoro") {
+      root.phase = "focus";
+      root.pomoDone = 0;
+      root.stagedSec = root.pomodoro.focusSec;
+    }
     root.remainingSec = root.stagedSec;
     root.totalSec = root.stagedSec;
     root.endAt = 0;
@@ -323,7 +483,14 @@ BarWidget {
       if (root.remainingSec > root.totalSec) root.totalSec = root.remainingSec;
       if (root.tState === "finished" && root.remainingSec > 0) root.tState = "paused";
     } else {
-      root.stagedSec = Logic.clampSeconds(root.stagedSec + d);
+      // Idle in pomodoro mode stages the focus duration itself, so the
+      // wheel and the panel steppers edit the same value.
+      if (root.mode === "pomodoro") {
+        root.updatePomodoro({ focusSec: Logic.clampPhaseSeconds(root.pomodoro.focusSec + d, root.pomodoro.focusSec) });
+        root.stagedSec = root.pomodoro.focusSec;
+      } else {
+        root.stagedSec = Logic.clampSeconds(root.stagedSec + d);
+      }
       root.remainingSec = root.stagedSec;
       root.totalSec = root.stagedSec;
     }
@@ -332,7 +499,12 @@ BarWidget {
 
   function stageSeconds(sec) {
     if (root.tState === "running" || root.tState === "paused") return;
-    root.stagedSec = Logic.clampSeconds(sec);
+    if (root.mode === "pomodoro") {
+      root.updatePomodoro({ focusSec: Logic.clampPhaseSeconds(sec, root.pomodoro.focusSec) });
+      root.stagedSec = root.pomodoro.focusSec;
+    } else {
+      root.stagedSec = Logic.clampSeconds(sec);
+    }
     root.remainingSec = root.stagedSec;
     root.totalSec = root.stagedSec;
     root.writeState();
@@ -358,6 +530,13 @@ BarWidget {
   }
 
   function finish(fromTick) {
+    if (root.mode === "pomodoro") {
+      // Non-driving instances wait for the owner's state write instead of
+      // advancing (and ringing) a second time.
+      if (!root.pomoDriver()) { root.remainingSec = 0; return; }
+      root.completePhase();
+      return;
+    }
     root.tState = "finished";
     root.remainingSec = 0;
     root.endAt = 0;
@@ -365,6 +544,9 @@ BarWidget {
     // The pill returns to its inactive background when the notification
     // expires (~15 s): red does not stay stuck until the click.
     finishCalm.restart();
+    root.alarmTitle = "Timer";
+    root.alarmBody = "Time's up";
+    root.alarmUrgency = "critical";
     // The alarm self-dedups across monitors with flock inside the script.
     if (root.soundOn) alarmProc.running = true;
     else notifyProc.running = true;
@@ -373,16 +555,20 @@ BarWidget {
     }
   }
 
+  property string alarmTitle: "Timer"
+  property string alarmBody: "Time's up"
+  property string alarmUrgency: "critical"
+
   Process {
     id: alarmProc
-    command: ["bash", root.alarmScript]
+    command: ["bash", root.alarmScript, "--title", root.alarmTitle, "--body", root.alarmBody, "--urgency", root.alarmUrgency]
   }
 
   Process {
     id: notifyProc
     // Goes through the script to reuse its flock: a single notification
     // even with one bar per monitor.
-    command: ["bash", root.alarmScript, "--silent"]
+    command: ["bash", root.alarmScript, "--silent", "--title", root.alarmTitle, "--body", root.alarmBody, "--urgency", root.alarmUrgency]
   }
 
   // Creates/validates the private dirs. Refuses symlinks, foreign ownership
@@ -663,12 +849,25 @@ BarWidget {
     function show(): void { root.open(); }
     function hide(): void { root.close(); }
     function toggle(): void { root.togglePanel(); }
-    function start(minutes: string): void { root.startSeconds(Number(minutes) * 60 || 600); }
+    function start(minutes: string): void { root.setMode("timer"); root.startSeconds(Number(minutes) * 60 || 600); }
     function stop(): void { root.resetAll(); }
+    function mode(m: string): void { root.setMode(m); }
+    function pomodoro(action: string): void {
+      if (action === "start") {
+        if (root.mode !== "pomodoro") root.setMode("pomodoro");
+        root.startPomodoro();
+      } else if (action === "pause") root.pause();
+      else if (action === "resume") root.resume();
+      else if (action === "skip") root.skipPhase();
+      else if (action === "reset") {
+        if (root.mode !== "pomodoro") root.setMode("pomodoro");
+        root.pomodoroReset();
+      } else if (action === "stop") root.resetAll();
+    }
     function detach(): void { root.setDetached(true); }
     function attach(): void { root.setDetached(false); }
     function status(): string {
-      return JSON.stringify({ state: root.tState, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened, sync: root.runDirSafe });
+      return JSON.stringify({ state: root.tState, mode: root.mode, phase: root.phase, done: root.pomoDone, cycles: root.pomodoro.cyclesBeforeLong, owner: root.pomoOwner, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened, sync: root.runDirSafe, pomodoro: root.pomodoro });
     }
     // Logical monitor layout (same units the floating window uses).
     function screens(): string {
