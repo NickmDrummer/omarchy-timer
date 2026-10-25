@@ -887,6 +887,28 @@ BarWidget {
   // ---- pill in the bar (glass accent + green heartbeat) ------------------
   // The topbar accent is `bar.urgent` (= Color.bar.active).
   readonly property color accent: root.bar ? root.bar.urgent : Color.accent
+  // Phase colors are deliberately NOT always the theme accent: a blue, cyan
+  // or white accent would make focus and break indistinguishable.
+  //   Original: fixed amber focus, fixed calm-blue break (custom look).
+  //   Omarchy:  theme-accent focus, the SAME fixed calm-blue break.
+  readonly property color focusAmber: Qt.rgba(0.95, 0.71, 0.29, 1)
+  readonly property color calmBlue: Qt.rgba(0.43, 0.70, 0.88, 1)
+  readonly property color phaseAccent: {
+    if (root.mode === "pomodoro") {
+      if (root.phase !== "focus") return root.calmBlue;
+      return root.omarchyTheme ? Color.accent : root.focusAmber;
+    }
+    return root.omarchyTheme ? root.accent : root.focusAmber;
+  }
+  readonly property string phaseLabel: {
+    if (root.mode !== "pomodoro") return "TIMER";
+    return root.phase === "focus" ? "FOCUS" : "BREAK";
+  }
+  readonly property string pomoProgress: {
+    var cycles = root.pomodoro.cyclesBeforeLong;
+    var current = root.phase === "focus" ? Math.min(cycles, root.pomoDone + 1) : root.pomoDone;
+    return current + "/" + cycles;
+  }
   function contrastOn(c) {
     var lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
     return lum > 0.55 ? Qt.rgba(0, 0, 0, 0.92) : Qt.rgba(1, 1, 1, 0.96);
@@ -913,7 +935,7 @@ BarWidget {
   readonly property color pillBg: {
     if (root.tState === "finished") return Util.alpha(root.bar ? root.bar.urgent : Color.urgent, 0.62);
     if (root.urgentPhase) return Qt.rgba(0.10, 0.45, 0.24, 0.78);
-    if (root.tState === "running") return Util.alpha(root.accent, 0.55);
+    if (root.tState === "running") return Util.alpha(root.phaseAccent, 0.55);
     if (root.omarchyTheme) return "transparent";
     if (root.lightTheme) return root.shade(root.topbarBg, 0.10);
     return root.topbarBg;
@@ -927,14 +949,14 @@ BarWidget {
 
   readonly property string pillText: {
     if (root.tState === "finished") return "TIMER 00:00";
-    if (root.tState === "idle") return "TIMER " + Logic.fmt(root.stagedSec);
-    return "TIMER " + Logic.fmt(root.remainingSec);
+    if (root.tState === "idle") return root.phaseLabel + " " + Logic.fmt(root.stagedSec);
+    return root.phaseLabel + " " + Logic.fmt(root.remainingSec);
   }
 
   readonly property color pillFg: {
     if (root.tState === "finished") return root.contrastOn(root.bar ? root.bar.urgent : Color.urgent);
     if (root.urgentPhase) return Qt.rgba(1, 1, 1, 0.96);
-    if (root.tState === "running") return root.contrastOn(root.accent);
+    if (root.tState === "running") return root.contrastOn(root.phaseAccent);
     return root.topbarFg;
   }
 
@@ -944,7 +966,7 @@ BarWidget {
   Item {
     id: pill
     anchors.fill: parent
-    implicitWidth: pillButton.implicitWidth + 4
+    implicitWidth: pillContent.implicitWidth + (cycleDots.visible ? 12 : 4)
     implicitHeight: barSize
     transformOrigin: Item.Center
 
@@ -1001,31 +1023,63 @@ BarWidget {
       }
     }
 
-    WidgetButton {
-      id: pillButton
+    Row {
+      id: pillContent
       anchors.centerIn: parent
-      bar: root.bar
-      text: root.pillText
-      fontFamily: root.face
-      fontSize: Style.font.body
-      foreground: root.pillFg
-      active: false
-      useActiveColor: false
-      tooltipText: {
-        if (root.tState === "running") return "Timer running — click to open, wheel ±1 min";
-        if (root.tState === "paused") return "Timer paused — click to resume";
-        if (root.tState === "finished") return "Time's up! Click to dismiss";
-        return "Timer — click to configure";
+      spacing: 7
+
+      WidgetButton {
+        id: pillButton
+        bar: root.bar
+        text: root.pillText
+        fontFamily: root.face
+        fontSize: Style.font.body
+        foreground: root.pillFg
+        active: false
+        useActiveColor: false
+        tooltipText: {
+          var what = root.mode === "pomodoro" ? ("Pomodoro " + root.phaseLabel.toLowerCase() + " " + root.pomoProgress) : "Timer";
+          if (root.tState === "running") return what + " running — click to open, wheel ±1 min";
+          if (root.tState === "paused") return what + " paused — click to resume";
+          if (root.tState === "finished") return "Time's up! Click to dismiss";
+          return what + " — click to configure";
+        }
+        onPressed: function(btn) {
+          if (root.tState === "finished") { root.dismiss(); return; }
+          if (btn === Qt.MiddleButton) root.togglePause();
+          else root.togglePanel();
+        }
+        onWheelMoved: function(delta) {
+          var steps = delta > 0 ? 1 : -1;
+          if (root.tState === "idle") root.stageSeconds(root.stagedSec + steps * 300);
+          else root.nudge(steps * 60);
+        }
       }
-      onPressed: function(btn) {
-        if (root.tState === "finished") { root.dismiss(); return; }
-        if (btn === Qt.MiddleButton) root.togglePause();
-        else root.togglePanel();
-      }
-      onWheelMoved: function(delta) {
-        var steps = delta > 0 ? 1 : -1;
-        if (root.tState === "idle") root.stageSeconds(root.stagedSec + steps * 300);
-        else root.nudge(steps * 60);
+
+      // Cycle dots: filled = completed focus blocks, outlined = the current
+      // one, faint = upcoming. Only while a pomodoro session exists, so the
+      // plain timer pill keeps exactly its previous width.
+      Row {
+        id: cycleDots
+        visible: root.mode === "pomodoro" && root.tState !== "idle"
+        width: visible ? implicitWidth : 0
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 3
+        Repeater {
+          model: cycleDots.visible ? root.pomodoro.cyclesBeforeLong : 0
+          Rectangle {
+            required property int index
+            readonly property bool filled: index < root.pomoDone
+            readonly property bool current: index === root.pomoDone && root.phase === "focus"
+            width: 4
+            height: 4
+            radius: 2
+            anchors.verticalCenter: parent.verticalCenter
+            color: filled ? root.pillFg : "transparent"
+            border.width: filled ? 0 : 1
+            border.color: Util.alpha(root.pillFg, current ? 0.9 : 0.3)
+          }
+        }
       }
     }
   }
