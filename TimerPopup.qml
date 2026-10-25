@@ -45,7 +45,14 @@ PanelWindow {
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
-  property var borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+  // Frame spec for the outer card. Deliberately NOT named `borderSpec`:
+  // Shibumi's WidgetSlot treats any foreign popup exposing
+  // anchorItem+cardOrigin+borderSpec+contentWidth+contentHeight+open as a
+  // "compatibility panel" and rebinds its border to the bar chrome (which
+  // erased the theme border here). A distinct name keeps the theme border
+  // under this plugin's control; the system BorderSurface below still gets
+  // a real spec, so the theme gradient keeps rendering through its overlay.
+  property var frameSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
   property bool centerOnBar: false
   property bool open: false
   property int gap: Style.gapsOut  // distance between bar edge and panel
@@ -162,7 +169,7 @@ PanelWindow {
   readonly property real availableCardHeight: screenH > 0
     ? Math.max(120, screenH - ((barPos === "top" || barPos === "bottom") ? barH + gap + margin : margin * 2))
     : 0
-  readonly property real verticalContentInset: padding * 2 + Border.top(borderSpec) + Border.bottom(borderSpec)
+  readonly property real verticalContentInset: padding * 2 + Border.top(frameSpec) + Border.bottom(frameSpec)
 
   function fittedContentWidth(width, cap) {
     var desired = Math.max(1, Number(width) || 1)
@@ -389,7 +396,7 @@ PanelWindow {
     width: root.contentWidth
     height: root.contentHeight
     color: root.cardColor
-    borderSpec: root.borderSpec
+    borderSpec: root.frameSpec
     padding: root.padding
     radius: root.cardRadius
     opacity: root.open || root.popoutSwitching ? 1.0 : 0

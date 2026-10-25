@@ -112,7 +112,7 @@ Panel {
     focusTarget: keyCatcher
     cardRadius: 20
     cardColor: root.omarchyTheme ? Color.popups.background : root.glassBlack
-    borderSpec: root.omarchyTheme
+    frameSpec: root.omarchyTheme
       ? Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(1)))
       : Border.none()
     contentWidth: panel.fittedContentWidth(Style.space(344))
