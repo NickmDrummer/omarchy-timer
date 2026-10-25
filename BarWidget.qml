@@ -76,8 +76,9 @@ BarWidget {
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
   readonly property string alarmScript: root.pluginDir + "scripts/timer-alarm.sh"
 
-  // ---- presets (editable, persisted in JSON) ----------------------------
+  // ---- presets + pomodoro config (editable, persisted in JSON) ----------
   property var presets: Logic.defaultPresets()
+  property var pomodoro: Logic.defaultPomodoro()
   property bool presetsReady: false
 
   function loadPresets(text) {
@@ -85,12 +86,24 @@ BarWidget {
     try { parsed = JSON.parse(String(text || "")); } catch (e) { parsed = null; }
     if (parsed) root.presets = Logic.cleanPresets(parsed);
     else root.presets = Logic.defaultPresets();
+    root.pomodoro = Logic.cleanPomodoro(parsed ? parsed.pomodoro : null);
     root.presetsReady = true;
   }
 
   function savePresets() {
     if (!root.presetsReady) return;
     presetsSave.restart();
+  }
+
+  // Merge a partial pomodoro config, normalize it and persist it together
+  // with the presets (single config file, single debounced write).
+  function updatePomodoro(patch) {
+    var merged = {};
+    var key;
+    for (key in root.pomodoro) merged[key] = root.pomodoro[key];
+    for (key in patch) merged[key] = patch[key];
+    root.pomodoro = Logic.cleanPomodoro(merged);
+    root.savePresets();
   }
 
   function addPreset(label, minutes) {
@@ -148,7 +161,7 @@ BarWidget {
     id: presetsSave
     interval: 500
     onTriggered: {
-      var payload = JSON.stringify({ version: 1, presets: root.presets }, null, 2) + "\n";
+      var payload = JSON.stringify({ version: 1, presets: root.presets, pomodoro: root.pomodoro }, null, 2) + "\n";
       presetsView.setText(payload);
     }
   }

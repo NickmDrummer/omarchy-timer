@@ -72,6 +72,41 @@ function cleanPresets(raw) {
   return out.slice(0, 24);
 }
 
+// Pomodoro phase configuration. Durations are stored in seconds so short
+// phases can be used in tests; the panel presents them as minutes.
+function defaultPomodoro() {
+  return {
+    focusSec: 1500,
+    shortSec: 300,
+    longSec: 900,
+    cyclesBeforeLong: 4,
+    autoStartBreaks: true,
+    autoStartFocus: false
+  };
+}
+
+function clampPhaseSeconds(s, fallback) {
+  var n = Number(s);
+  if (!isFinite(n)) return fallback;
+  return Math.max(3, Math.min(43200, Math.round(n)));
+}
+
+// Normalize the `pomodoro` key of the config file. Unknown keys are dropped
+// and missing ones fall back to defaults, so old configs keep working.
+function cleanPomodoro(raw) {
+  var d = defaultPomodoro();
+  var o = (raw && typeof raw === "object") ? raw : {};
+  var cycles = Number(o.cyclesBeforeLong);
+  return {
+    focusSec: clampPhaseSeconds(o.focusSec, d.focusSec),
+    shortSec: clampPhaseSeconds(o.shortSec, d.shortSec),
+    longSec: clampPhaseSeconds(o.longSec, d.longSec),
+    cyclesBeforeLong: isFinite(cycles) ? Math.max(2, Math.min(12, Math.round(cycles))) : d.cyclesBeforeLong,
+    autoStartBreaks: o.autoStartBreaks !== undefined ? !!o.autoStartBreaks : d.autoStartBreaks,
+    autoStartFocus: o.autoStartFocus !== undefined ? !!o.autoStartFocus : d.autoStartFocus
+  };
+}
+
 function stateFile(dir) {
   return dir + "/state.json";
 }
