@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "nickmdrummer.timer",
-  "name": "Timer",
+  "name": "Looper",
   "version": "1.0.2",
   "author": "nickmdrummer",
   "license": "MIT",
-  "description": "Modern top-bar timer: countdown pill, JSON-editable presets, manual picker with +5/-5 and always-on-top floating mode with a gentle alarm.",
+  "description": "Time suite for the top bar: timer, pomodoro and alarms, with a countdown pill and an always-on-top floating card.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Timer",
-    "description": "Countdown with a gentle alarm and floating mode.",
+    "displayName": "Looper",
+    "description": "Timer, pomodoro and alarms in the bar.",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "right",

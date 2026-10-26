@@ -999,8 +999,8 @@ BarWidget {
   readonly property string face: root.bar && root.bar.fontFamily ? root.bar.fontFamily : Style.font.family
 
   readonly property string pillText: {
-    if (root.tState === "finished") return "TIMER 00:00";
-    if (root.tState === "idle") return root.phaseLabel + " " + Logic.fmt(root.stagedSec);
+    if (root.tState === "finished") return root.phaseLabel + " 00:00";
+    if (root.tState === "idle") return "LOOPER";
     return root.phaseLabel + " " + Logic.fmt(root.remainingSec);
   }
 
@@ -1093,7 +1093,7 @@ BarWidget {
           if (root.tState === "running") return what + " running — click to open, wheel ±1 min";
           if (root.tState === "paused") return what + " paused — click to resume";
           if (root.tState === "finished") return "Time's up! Click to dismiss";
-          return what + " — click to configure";
+          return "Looper — click to open";
         }
         onPressed: function(btn) {
           if (root.tState === "finished") { root.dismiss(); return; }
