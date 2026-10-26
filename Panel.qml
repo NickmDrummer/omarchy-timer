@@ -875,37 +875,6 @@ Panel {
 
           Row {
             width: parent.width
-            spacing: Style.space(8)
-            Stepper {
-              title: "LONG EVERY"
-              width: (parent.width - Style.space(16)) / 3
-              value: hostWidget ? hostWidget.pomodoro.cyclesBeforeLong : 4
-              min: 2
-              max: 12
-              fg: root.fg
-              face: root.face
-              onChanged: function(v) { if (hostWidget) hostWidget.updatePomodoro({ cyclesBeforeLong: v }); }
-            }
-            TimerButton {
-              width: (parent.width - Style.space(16)) / 3
-              label: "Skip"
-              tip: "Skip phase (S): an early skipped focus does not count"
-              fg: root.fg
-              face: root.face
-              onFired: if (hostWidget) hostWidget.skipPhase()
-            }
-            TimerButton {
-              width: (parent.width - Style.space(16)) / 3
-              label: "Restart"
-              tip: "Back to focus 1, paused"
-              fg: root.fg
-              face: root.face
-              onFired: if (hostWidget) hostWidget.pomodoroReset()
-            }
-          }
-
-          Row {
-            width: parent.width
             Text {
               width: parent.width - 46
               anchors.verticalCenter: parent.verticalCenter
@@ -977,6 +946,16 @@ Panel {
 
             Text {
               width: parent.width
+              visible: hostWidget && hostWidget.alarms.length > 0
+              horizontalAlignment: Text.AlignHCenter
+              text: "Click an alarm to edit"
+              color: Util.alpha(root.fg, 0.40)
+              font.family: root.face
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              width: parent.width
               visible: !hostWidget || hostWidget.alarms.length === 0
               horizontalAlignment: Text.AlignHCenter
               topPadding: Style.space(8)
@@ -1002,8 +981,22 @@ Panel {
                 }
 
                 Item {
+                  id: alarmRow
                   width: alarmsView.width
                   height: Math.max(74, alarmRowInfo.implicitHeight)
+
+                  // The click target lives on the Item, not inside the Column:
+                  // positioners ignore anchors, which is why taps did nothing.
+                  MouseArea {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: parent.width - 46
+                    acceptedButtons: Qt.LeftButton
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openAlarmEditor(modelData)
+                  }
 
                   Column {
                     id: alarmRowInfo
@@ -1036,14 +1029,6 @@ Panel {
                       color: Util.alpha(root.fg, 0.45)
                       font.family: root.face
                       font.pixelSize: Style.font.caption
-                    }
-
-                    // Tapping the text block (never the toggle) edits the alarm.
-                    MouseArea {
-                      anchors.fill: parent
-                      acceptedButtons: Qt.LeftButton
-                      cursorShape: Qt.PointingHandCursor
-                      onClicked: root.openAlarmEditor(modelData)
                     }
                   }
 
