@@ -793,46 +793,102 @@ Panel {
           Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
           Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
 
-          // Cycle dots: filled = completed focus blocks, outlined = current.
-          Row {
+          // Cycle row: the dots are also the long-break interval control
+          // (click a dot while idle). They read as progress during a session.
+          Item {
             width: parent.width
-            height: Style.space(22)
-            spacing: Style.space(10)
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: "CYCLE"
-              color: Util.alpha(root.fg, 0.6)
-              font.family: root.face
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              font.letterSpacing: 1.4
-            }
+            height: Style.space(34)
+
             Row {
+              anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              spacing: 5
-              Repeater {
-                model: hostWidget ? hostWidget.pomodoro.cyclesBeforeLong : 4
-                Rectangle {
-                  required property int index
-                  readonly property bool filled: hostWidget && index < hostWidget.pomoDone
-                  readonly property bool current: hostWidget && index === hostWidget.pomoDone && hostWidget.phase === "focus"
-                  width: 7
-                  height: 7
-                  radius: 3.5
-                  anchors.verticalCenter: parent.verticalCenter
-                  color: filled ? hostWidget.phaseAccent : "transparent"
-                  border.width: filled ? 0 : (current ? 1.5 : 1)
-                  border.color: current ? hostWidget.phaseAccent : root.ink(0.38)
+              spacing: Style.space(10)
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "CYCLE"
+                color: Util.alpha(root.fg, 0.6)
+                font.family: root.face
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                font.letterSpacing: 1.4
+              }
+
+              Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 4
+                Repeater {
+                  model: 8
+                  Item {
+                    required property int index
+                    readonly property bool filled: hostWidget && index < hostWidget.pomoDone
+                    readonly property bool current: hostWidget && index === hostWidget.pomoDone && hostWidget.phase === "focus"
+                    readonly property bool threshold: hostWidget && index === hostWidget.pomodoro.cyclesBeforeLong - 1
+                    readonly property bool editable: hostWidget && hostWidget.tState === "idle"
+                    width: 8
+                    height: 20
+                    Rectangle {
+                      anchors.centerIn: parent
+                      width: 7
+                      height: 7
+                      radius: 3.5
+                      color: parent.filled ? hostWidget.phaseAccent : "transparent"
+                      border.width: parent.filled ? 0 : (parent.threshold ? 1.6 : 1)
+                      border.color: parent.threshold ? hostWidget.phaseAccent : root.ink(parent.current ? 0.55 : 0.28)
+                    }
+                    HoverHandler { cursorShape: parent.editable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler {
+                      acceptedButtons: Qt.LeftButton
+                      onTapped: {
+                        if (!parent.editable || index < 1) return;
+                        hostWidget.updatePomodoro({ cyclesBeforeLong: index + 1 });
+                      }
+                    }
+                  }
                 }
               }
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: hostWidget ? hostWidget.pomoProgress : ""
+                color: Util.alpha(root.fg, 0.6)
+                font.family: root.face
+                font.pixelSize: Style.font.bodySmall
+              }
             }
-            Text {
+
+            Row {
+              anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              text: hostWidget ? hostWidget.pomoProgress : ""
-              color: Util.alpha(root.fg, 0.6)
-              font.family: root.face
-              font.pixelSize: Style.font.bodySmall
+              spacing: Style.space(6)
+
+              TimerButton {
+                width: 58
+                label: "Skip"
+                tip: "Skip phase (S): an early skipped focus does not count"
+                fg: root.fg
+                face: root.face
+                onFired: if (hostWidget) hostWidget.skipPhase()
+              }
+              TimerButton {
+                width: 66
+                label: "Restart"
+                tip: "Back to focus 1, paused"
+                fg: root.fg
+                face: root.face
+                onFired: if (hostWidget) hostWidget.pomodoroReset()
+              }
             }
+          }
+
+          // Only shown while the dots can be edited.
+          Text {
+            width: parent.width
+            visible: hostWidget && hostWidget.tState === "idle"
+            text: "Click a dot to set the long-break interval"
+            color: Util.alpha(root.fg, 0.35)
+            font.family: root.face
+            font.pixelSize: Style.font.caption
           }
 
           Row {
