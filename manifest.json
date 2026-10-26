@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "nickmdrummer.timer",
   "name": "Looper: Timer, Pomodoro & Alarms",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "author": "nickmdrummer",
   "license": "MIT",
   "description": "Time suite for the top bar: timer, pomodoro and alarms, with a countdown pill and an always-on-top floating card.",
