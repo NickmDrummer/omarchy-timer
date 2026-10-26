@@ -99,7 +99,10 @@ Panel {
 
   function setEveryDay(on) {
     root.alarmEveryDay = on === true;
+    // Turning it off keeps the seven days selected otherwise, which makes the
+    // row keep reading "Every day" no matter what the user picks.
     if (root.alarmEveryDay) root.alarmDays = [0, 1, 2, 3, 4, 5, 6];
+    else root.alarmDays = [1, 2, 3, 4, 5];
   }
 
   function saveAlarm() {
