@@ -1293,7 +1293,20 @@ BarWidget {
     Row {
       id: pillContent
       anchors.centerIn: parent
-      spacing: 7
+      spacing: 4
+
+      // Looper mark: only while nothing is running. Two pixels larger than the
+      // label so it reads at the same visual weight as the caps.
+      Text {
+        id: looperMark
+        visible: root.tState === "idle"
+        width: visible ? implicitWidth : 0
+        anchors.verticalCenter: parent.verticalCenter
+        text: "∞"
+        color: root.pillFg
+        font.family: root.face
+        font.pixelSize: Style.font.body + 2
+      }
 
       WidgetButton {
         id: pillButton
