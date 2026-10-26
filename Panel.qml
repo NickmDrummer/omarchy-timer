@@ -825,13 +825,13 @@ Panel {
                     readonly property bool current: hostWidget && index === hostWidget.pomoDone && hostWidget.phase === "focus"
                     readonly property bool threshold: hostWidget && index === hostWidget.pomodoro.cyclesBeforeLong - 1
                     readonly property bool editable: hostWidget && hostWidget.tState === "idle"
-                    width: 8
-                    height: 20
+                    width: 10
+                    height: 22
                     Rectangle {
                       anchors.centerIn: parent
-                      width: 7
-                      height: 7
-                      radius: 3.5
+                      width: 9
+                      height: 9
+                      radius: 4.5
                       color: parent.filled ? hostWidget.phaseAccent : "transparent"
                       border.width: parent.filled ? 0 : (parent.threshold ? 1.6 : 1)
                       border.color: parent.threshold ? hostWidget.phaseAccent : root.ink(parent.current ? 0.55 : 0.28)
@@ -843,6 +843,65 @@ Panel {
                         if (!parent.editable || index < 1) return;
                         hostWidget.updatePomodoro({ cyclesBeforeLong: index + 1 });
                       }
+                    }
+                  }
+                }
+              }
+
+              Column {
+                id: cycleAdjust
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 1
+                readonly property bool editable: hostWidget && hostWidget.tState === "idle"
+                opacity: editable ? 1 : 0.35
+
+                Item {
+                  width: 20
+                  height: 14
+                  Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: root.ink(0.10)
+                  }
+                  Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: Util.alpha(root.fg, 0.8)
+                    font.family: root.face
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+                  HoverHandler { cursorShape: cycleAdjust.editable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                  TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: {
+                      if (!cycleAdjust.editable) return;
+                      hostWidget.updatePomodoro({ cyclesBeforeLong: Math.min(8, hostWidget.pomodoro.cyclesBeforeLong + 1) });
+                    }
+                  }
+                }
+                Item {
+                  width: 20
+                  height: 14
+                  Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: root.ink(0.10)
+                  }
+                  Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: Util.alpha(root.fg, 0.8)
+                    font.family: root.face
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+                  HoverHandler { cursorShape: cycleAdjust.editable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                  TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: {
+                      if (!cycleAdjust.editable) return;
+                      hostWidget.updatePomodoro({ cyclesBeforeLong: Math.max(2, hostWidget.pomodoro.cyclesBeforeLong - 1) });
                     }
                   }
                 }
