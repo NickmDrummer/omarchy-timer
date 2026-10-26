@@ -67,7 +67,7 @@ Panel {
       root.alarmName = String(alarm.name || "");
       root.alarmHour = Number(alarm.hour) || 0;
       root.alarmMinute = Number(alarm.minute) || 0;
-      root.alarmDays = (alarm.days || []).slice();
+      root.alarmDays = Logic.toList(alarm.days);
       root.alarmSound = alarm.sound !== false;
     } else {
       var now = new Date();
@@ -88,7 +88,7 @@ Panel {
 
   function toggleAlarmDay(d) {
     if (root.alarmEveryDay) return;
-    var list = (root.alarmDays || []).slice();
+    var list = Logic.toList(root.alarmDays);
     var i = list.indexOf(d);
     if (i >= 0) list.splice(i, 1);
     else list.push(d);

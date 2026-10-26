@@ -131,8 +131,17 @@ function alarmName(raw) {
   return String(raw || "").trim().slice(0, 10).toUpperCase();
 }
 
+// QML hands nested arrays over as list-like objects, where Array.isArray is
+// false. Copy by index so both shapes behave the same.
+function toList(raw) {
+  var out = [];
+  if (!raw || typeof raw.length !== "number") return out;
+  for (var i = 0; i < raw.length; i++) out.push(raw[i]);
+  return out;
+}
+
 function alarmDays(raw) {
-  var list = Array.isArray(raw) ? raw : [];
+  var list = toList(raw);
   var seen = {};
   var out = [];
   for (var i = 0; i < list.length; i++) {
