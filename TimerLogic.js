@@ -107,6 +107,81 @@ function cleanPomodoro(raw) {
   };
 }
 
+// ---- alarms --------------------------------------------------------------
+var ALARM_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Empty by default: the panel starts with no alarms configured.
+function defaultAlarms() {
+  return [];
+}
+
+function clampAlarmHour(h) {
+  var n = Number(h);
+  if (!isFinite(n)) return 8;
+  return Math.max(0, Math.min(23, Math.round(n)));
+}
+
+function clampAlarmMinute(m) {
+  var n = Number(m);
+  if (!isFinite(n)) return 0;
+  return Math.max(0, Math.min(59, Math.round(n)));
+}
+
+function alarmName(raw) {
+  return String(raw || "").trim().slice(0, 10).toUpperCase();
+}
+
+function alarmDays(raw) {
+  var list = Array.isArray(raw) ? raw : [];
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var d = Number(list[i]);
+    if (!isFinite(d)) continue;
+    d = Math.round(d);
+    if (d < 0 || d > 6 || seen[d]) continue;
+    seen[d] = true;
+    out.push(d);
+  }
+  out.sort(function(a, b) { return a - b; });
+  // "Every day" is the only complete set; an alarm without days has none.
+  return out.length === 0 ? [0, 1, 2, 3, 4, 5, 6] : out;
+}
+
+// "Every day" | "Sun Mon Tue" — the caption under the alarm time.
+function alarmRepeatLabel(days) {
+  var list = alarmDays(days);
+  if (list.length === 7) return "Every day";
+  var names = [];
+  for (var i = 0; i < list.length; i++) names.push(ALARM_DAYS[list[i]]);
+  return names.join(" ");
+}
+
+// Normalize the `alarms` array read from JSON. Invalid entries are dropped so
+// a hand-edited file can never break the panel.
+function cleanAlarms(raw) {
+  var list = Array.isArray(raw) ? raw : [];
+  var out = [];
+  var seen = {};
+  for (var i = 0; i < list.length; i++) {
+    var a = list[i];
+    if (!a || typeof a !== "object") continue;
+    var id = String(a.id || "").trim() || ("alarm-" + i + "-" + clampAlarmHour(a.hour) + clampAlarmMinute(a.minute));
+    if (seen[id]) continue;
+    seen[id] = true;
+    out.push({
+      id: id,
+      name: alarmName(a.name) || "ALARM",
+      hour: clampAlarmHour(a.hour),
+      minute: clampAlarmMinute(a.minute),
+      days: alarmDays(a.days),
+      sound: a.sound !== false,
+      enabled: a.enabled !== false
+    });
+  }
+  return out.slice(0, 16);
+}
+
 function stateFile(dir) {
   return dir + "/state.json";
 }

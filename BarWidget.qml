@@ -92,6 +92,7 @@ BarWidget {
   // ---- presets + pomodoro config (editable, persisted in JSON) ----------
   property var presets: Logic.defaultPresets()
   property var pomodoro: Logic.defaultPomodoro()
+  property var alarms: Logic.defaultAlarms()
   property bool presetsReady: false
 
   function loadPresets(text) {
@@ -100,6 +101,7 @@ BarWidget {
     if (parsed) root.presets = Logic.cleanPresets(parsed);
     else root.presets = Logic.defaultPresets();
     root.pomodoro = Logic.cleanPomodoro(parsed ? parsed.pomodoro : null);
+    root.alarms = Logic.cleanAlarms(parsed ? parsed.alarms : null);
     root.presetsReady = true;
     // External config edits retarget an idle pomodoro display, but never
     // rewrite the shared state (that would bounce between monitors).
@@ -126,8 +128,47 @@ BarWidget {
     root.savePresets();
   }
 
-  function addPreset(label, minutes) {
-    var m = Logic.clampMinutes(minutes);
+  // ---- alarms (add/edit/remove, persisted with the rest of the config) ---
+  function addAlarm(alarm) {
+    var next = root.alarms.slice();
+    var id = Logic.uid("a");
+    var clean = Logic.cleanAlarms([{
+      id: id,
+      name: alarm && alarm.name,
+      hour: alarm && alarm.hour,
+      minute: alarm && alarm.minute,
+      days: alarm && alarm.days,
+      sound: alarm && alarm.sound,
+      enabled: true
+    }]);
+    if (clean.length === 0) return "";
+    next.push(clean[0]);
+    root.alarms = next.slice(0, 16);
+    root.savePresets();
+    return clean[0].id;
+  }
+
+  function updateAlarm(id, patch) {
+    root.alarms = root.alarms.map(function(a) {
+      if (String(a.id) !== String(id)) return a;
+      var merged = { id: a.id, name: a.name, hour: a.hour, minute: a.minute, days: a.days, sound: a.sound, enabled: a.enabled };
+      for (var k in patch) merged[k] = patch[k];
+      var clean = Logic.cleanAlarms([merged]);
+      return clean.length ? clean[0] : a;
+    });
+    root.savePresets();
+  }
+
+  function removeAlarm(id) {
+    root.alarms = root.alarms.filter(function(a) { return String(a.id) !== String(id); });
+    root.savePresets();
+  }
+
+  function setAlarmEnabled(id, on) {
+    root.updateAlarm(id, { enabled: on === true });
+  }
+
+  function addPreset(label, minutes) {    var m = Logic.clampMinutes(minutes);
     var name = String(label || m).trim().slice(0, 12) || String(m);
     var next = root.presets.slice();
     next.push({ id: Logic.uid("p"), label: name, minutes: m });
@@ -181,7 +222,7 @@ BarWidget {
     id: presetsSave
     interval: 500
     onTriggered: {
-      var payload = JSON.stringify({ version: 1, presets: root.presets, pomodoro: root.pomodoro }, null, 2) + "\n";
+      var payload = JSON.stringify({ version: 1, presets: root.presets, pomodoro: root.pomodoro, alarms: root.alarms }, null, 2) + "\n";
       presetsView.setText(payload);
     }
   }
