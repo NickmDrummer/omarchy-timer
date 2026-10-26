@@ -103,6 +103,7 @@ BarWidget {
     root.pomodoro = Logic.cleanPomodoro(parsed ? parsed.pomodoro : null);
     root.alarms = Logic.cleanAlarms(parsed ? parsed.alarms : null);
     root.presetsReady = true;
+    root.refreshAlarmSchedule();
     // External config edits retarget an idle pomodoro display, but never
     // rewrite the shared state (that would bounce between monitors).
     if (root.mode === "pomodoro" && root.tState === "idle") {
@@ -144,6 +145,7 @@ BarWidget {
     if (clean.length === 0) return "";
     next.push(clean[0]);
     root.alarms = next.slice(0, 16);
+    root.refreshAlarmSchedule();
     root.savePresets();
     return clean[0].id;
   }
@@ -156,16 +158,163 @@ BarWidget {
       var clean = Logic.cleanAlarms([merged]);
       return clean.length ? clean[0] : a;
     });
+    root.refreshAlarmSchedule();
     root.savePresets();
   }
 
   function removeAlarm(id) {
     root.alarms = root.alarms.filter(function(a) { return String(a.id) !== String(id); });
+    root.refreshAlarmSchedule();
     root.savePresets();
   }
 
   function setAlarmEnabled(id, on) {
     root.updateAlarm(id, { enabled: on === true });
+  }
+
+  // ---- alarms: schedule engine ------------------------------------------
+  // Each monitor computes the same next occurrence; a per-occurrence claim
+  // directory in the private run dir makes sure only one of them rings.
+  property var alarmNextMap: ({})
+
+  function alarmTimeLabel(a) {
+    var h = a.hour < 10 ? "0" + a.hour : String(a.hour);
+    var m = a.minute < 10 ? "0" + a.minute : String(a.minute);
+    return h + ":" + m;
+  }
+
+  // Next epoch for the given alarm, strictly after `fromMs`, local time.
+  // Day arithmetic goes through the Date constructor so DST shifts keep the
+  // wall-clock hour instead of drifting by an hour.
+  function nextAlarmAt(alarm, fromMs) {
+    var now = new Date(fromMs);
+    var best = 0;
+    for (var i = 0; i < alarm.days.length; i++) {
+      var delta = (alarm.days[i] - now.getDay() + 7) % 7;
+      var day = now.getDate() + delta;
+      var cand = new Date(now.getFullYear(), now.getMonth(), day, alarm.hour, alarm.minute, 0, 0).getTime();
+      if (cand <= fromMs) cand = new Date(now.getFullYear(), now.getMonth(), day + 7, alarm.hour, alarm.minute, 0, 0).getTime();
+      if (best === 0 || cand < best) best = cand;
+    }
+    return best;
+  }
+
+  // Signature of what defines the schedule: time + days. Kept with each
+  // pending occurrence so a config reload does not forget an alarm that was
+  // already due while the session was frozen.
+  function alarmSignature(a) {
+    return a.hour + ":" + a.minute + ":" + a.days.join(",");
+  }
+
+  function refreshAlarmSchedule() {
+    var prev = root.alarmNextMap || {};
+    var map = {};
+    var now = Date.now();
+    for (var i = 0; i < root.alarms.length; i++) {
+      var a = root.alarms[i];
+      if (!a.enabled) continue;
+      var sig = root.alarmSignature(a);
+      var old = prev[a.id];
+      if (old && old.at && old.sig === sig) map[a.id] = old;
+      else map[a.id] = { at: root.nextAlarmAt(a, now), sig: sig };
+    }
+    root.alarmNextMap = map;
+  }
+
+  // Fires anything due. Overdue by more than 2 minutes (laptop was suspended)
+  // only notifies: no chime for something you already missed.
+  function checkAlarms() {
+    var now = Date.now();
+    var map = root.alarmNextMap;
+    var due = [];
+    var changed = false;
+    for (var i = 0; i < root.alarms.length; i++) {
+      var a = root.alarms[i];
+      if (!a.enabled) {
+        if (map[a.id] !== undefined) { delete map[a.id]; changed = true; }
+        continue;
+      }
+      var entry = map[a.id];
+      if (!entry) {
+        entry = { at: root.nextAlarmAt(a, now), sig: root.alarmSignature(a) };
+        map[a.id] = entry;
+        changed = true;
+      }
+      if (now >= entry.at) {
+        due.push({ alarm: a, at: entry.at, late: now - entry.at });
+        entry.at = root.nextAlarmAt(a, now + 1000);
+        entry.sig = root.alarmSignature(a);
+        changed = true;
+      }
+    }
+    if (changed) root.alarmNextMap = map;
+    if (due.length === 0) return;
+    root.claimAlarms(due);
+  }
+
+  // One mkdir per occurrence decides the single instance that rings.
+  readonly property string alarmClaimScript: [
+    "set -u",
+    "dir=\"$0\"",
+    "claims=\"$dir/alarm-claims\"",
+    "mkdir -p \"$claims\" 2>/dev/null || exit 0",
+    "for key in \"$@\"; do",
+    "  if mkdir \"$claims/$key\" 2>/dev/null; then echo \"$key\"; fi",
+    "done",
+    "find \"$claims\" -mindepth 1 -maxdepth 1 -mtime +2 -exec rm -rf {} + 2>/dev/null || true"
+  ].join("\n")
+
+  function claimAlarms(due) {
+    if (!root.runDirSafe) return;
+    alarmClaimProc.pending = due;
+    var args = ["bash", "-c", root.alarmClaimScript, root.runDir];
+    for (var i = 0; i < due.length; i++) args.push(String(due[i].alarm.id) + "@" + String(due[i].at));
+    alarmClaimProc.command = args;
+    alarmClaimProc.running = true;
+  }
+
+  function fireClaimedAlarms(pending, keys) {
+    var claimed = [];
+    for (var i = 0; i < pending.length; i++) {
+      var p = pending[i];
+      if (keys.indexOf(String(p.alarm.id) + "@" + String(p.at)) >= 0) claimed.push(p);
+    }
+    if (claimed.length === 0) return;
+    var loud = false;
+    for (var j = 0; j < claimed.length; j++) {
+      if (claimed[j].late <= 120000 && claimed[j].alarm.sound && root.soundOn) loud = true;
+    }
+    if (loud) Quickshell.execDetached(["bash", root.alarmScript, "--no-notify"]);
+    for (var k = 0; k < claimed.length; k++) {
+      var c = claimed[k];
+      var missed = c.late > 120000;
+      var body = (missed ? "Missed " : "") + c.alarm.name + " — " + root.alarmTimeLabel(c.alarm);
+      Quickshell.execDetached([
+        "notify-send", "Looper", body,
+        "-u", missed ? "normal" : "critical",
+        "-t", "15000"
+      ]);
+    }
+  }
+
+  Process {
+    id: alarmClaimProc
+    property var pending: []
+    command: []
+    stdout: StdioCollector { id: alarmClaimOut; waitForEnd: true }
+    onExited: function(code) {
+      var raw = String(alarmClaimOut.text || "").trim();
+      var keys = raw.length > 0 ? raw.split("\n") : [];
+      root.fireClaimedAlarms(alarmClaimProc.pending, keys);
+    }
+  }
+
+  Timer {
+    id: alarmTick
+    interval: 5000
+    repeat: true
+    running: root.alarms.length > 0
+    onTriggered: root.checkAlarms()
   }
 
   function addPreset(label, minutes) {    var m = Logic.clampMinutes(minutes);
@@ -642,7 +791,6 @@ BarWidget {
     id: alarmProc
     command: ["bash", root.alarmScript, "--title", root.alarmTitle, "--body", root.alarmBody, "--urgency", root.alarmUrgency]
   }
-
   Process {
     id: notifyProc
     // Goes through the script to reuse its flock: a single notification
@@ -945,8 +1093,33 @@ BarWidget {
     }
     function detach(): void { root.setDetached(true); }
     function attach(): void { root.setDetached(false); }
+    // Alarms: list includes the computed next occurrence, for scripting and
+    // for the panel to show "next at".
+    function alarmList(): string {
+      var out = [];
+      for (var i = 0; i < root.alarms.length; i++) {
+        var a = root.alarms[i];
+        out.push({
+          id: a.id, name: a.name, hour: a.hour, minute: a.minute, days: a.days,
+          sound: a.sound, enabled: a.enabled, repeat: Logic.alarmRepeatLabel(a.days),
+          nextAt: (root.alarmNextMap[a.id] && root.alarmNextMap[a.id].at) || 0
+        });
+      }
+      return JSON.stringify({ now: Date.now(), sync: root.runDirSafe, alarms: out });
+    }
+    function alarmAdd(json: string): string {
+      var o = null;
+      try { o = JSON.parse(String(json || "")); } catch (e) { return ""; }
+      return root.addAlarm(o);
+    }
+    function alarmRemove(id: string): void { root.removeAlarm(id); }
+    function alarmEnable(id: string, on: string): void {
+      var v = String(on || "").toLowerCase();
+      root.setAlarmEnabled(id, v === "true" || v === "1" || v === "on");
+    }
+    function alarmCheck(): void { root.checkAlarms(); }
     function status(): string {
-      return JSON.stringify({ state: root.tState, mode: root.mode, phase: root.phase, done: root.pomoDone, cycles: root.pomodoro.cyclesBeforeLong, owner: root.pomoOwner, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, opened: root.opened, sync: root.runDirSafe, pomodoro: root.pomodoro });
+      return JSON.stringify({ state: root.tState, mode: root.mode, phase: root.phase, done: root.pomoDone, cycles: root.pomodoro.cyclesBeforeLong, owner: root.pomoOwner, remaining: root.remainingSec, total: root.totalSec, detached: root.detached, detachedScreen: root.detachedScreen, screenName: root.screenName, monitors: root.monitorMap.length, presets: root.presets.length, alarms: root.alarms.length, opened: root.opened, sync: root.runDirSafe, pomodoro: root.pomodoro });
     }
     // Logical monitor layout (same units the floating window uses).
     function screens(): string {
@@ -1194,5 +1367,6 @@ BarWidget {
     // The PillButton path may not be ready yet; retry one beat later.
     Qt.callLater(root.updateScreenName);
     mkdirProc.running = true;
+    root.refreshAlarmSchedule();
   }
 }

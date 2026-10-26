@@ -12,6 +12,7 @@ exec 9>"$LOCK"
 flock -n 9 || exit 0
 
 SILENT=0
+NOTIFY=1
 TITLE="Timer"
 BODY="Time's up"
 URGENCY="critical"
@@ -20,6 +21,7 @@ URGENCY="critical"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --silent) SILENT=1; shift ;;
+    --no-notify) NOTIFY=0; shift ;;
     --title) TITLE="${2:-$TITLE}"; shift 2 ;;
     --body) BODY="${2:-$BODY}"; shift 2 ;;
     --urgency) URGENCY="${2:-$URGENCY}"; shift 2 ;;
@@ -93,5 +95,7 @@ if [[ $SILENT -eq 0 ]]; then
   play_once "$CHIME" || true
 fi
 
-command -v notify-send >/dev/null 2>&1 && \
-  notify-send "$TITLE" "$BODY" -u "$URGENCY" -t 15000 2>/dev/null || true
+if [[ $NOTIFY -eq 1 ]]; then
+  command -v notify-send >/dev/null 2>&1 && \
+    notify-send "$TITLE" "$BODY" -u "$URGENCY" -t 15000 2>/dev/null || true
+fi
