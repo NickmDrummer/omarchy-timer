@@ -903,8 +903,8 @@ BarWidget {
   // or white accent would make focus and break indistinguishable.
   //   Original: fixed amber focus, fixed calm-blue break (custom look).
   //   Omarchy:  theme-accent focus, the SAME fixed calm-blue break.
-  readonly property color focusAmber: Qt.rgba(0.95, 0.71, 0.29, 1)
-  readonly property color calmBlue: Qt.rgba(0.43, 0.70, 0.88, 1)
+  readonly property color focusAmber: Qt.rgba(0.957, 0.706, 0.0, 1)
+  readonly property color calmBlue: Qt.rgba(0.114, 0.608, 0.941, 1)
   readonly property color phaseAccent: {
     if (root.mode === "pomodoro") {
       if (root.phase !== "focus") return root.calmBlue;
