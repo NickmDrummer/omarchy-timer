@@ -1002,16 +1002,6 @@ Panel {
 
             Text {
               width: parent.width
-              visible: hostWidget && hostWidget.alarms.length > 0
-              horizontalAlignment: Text.AlignHCenter
-              text: "Click an alarm to edit"
-              color: Util.alpha(root.fg, 0.40)
-              font.family: root.face
-              font.pixelSize: Style.font.caption
-            }
-
-            Text {
-              width: parent.width
               visible: !hostWidget || hostWidget.alarms.length === 0
               horizontalAlignment: Text.AlignHCenter
               topPadding: Style.space(8)
@@ -1052,6 +1042,12 @@ Panel {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.openAlarmEditor(modelData)
+                  }
+
+                  HoverHandler { id: alarmRowHover }
+                  PanelToolTip {
+                    visible: alarmRowHover.hovered
+                    text: "Click to edit"
                   }
 
                   Column {
