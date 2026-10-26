@@ -1109,7 +1109,9 @@ BarWidget {
 
       // Cycle dots: filled = completed focus blocks, outlined = the current
       // one, faint = upcoming. Only while a pomodoro session exists, so the
-      // plain timer pill keeps exactly its previous width.
+      // plain timer pill keeps exactly its previous width. The trailing gap
+      // mirrors the button's inner margin so the dots sit optically centered
+      // instead of hugging the right edge.
       Row {
         id: cycleDots
         visible: root.mode === "pomodoro" && root.tState !== "idle"
@@ -1131,6 +1133,7 @@ BarWidget {
             border.color: Util.alpha(root.pillFg, current ? 0.9 : 0.3)
           }
         }
+        Item { width: cycleDots.visible ? pillButton.scaledHorizontalMargin : 0; height: 1 }
       }
     }
   }
