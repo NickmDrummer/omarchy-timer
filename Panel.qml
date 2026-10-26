@@ -1505,6 +1505,21 @@ Panel {
       v = Math.max(step.min, Math.min(step.max, v));
       if (v !== step.value) step.changed(v);
     }
+    // Wheel: one unit per notch, five with Shift. Shared by every stepper
+    // (timer tune, pomodoro phases, alarm editor). Quickshell delivers wheel
+    // through MouseArea.onWheel, not WheelHandler; declared before the Column
+    // so the +/- taps stay on top and clicks keep working.
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.NoButton
+      onWheel: function(wheel) {
+        var delta = wheel.angleDelta.y;
+        if (delta === 0) return;
+        var mult = (wheel.modifiers & Qt.ShiftModifier) ? 5 : 1;
+        step.emitClamped(step.value + (delta > 0 ? mult : -mult));
+        wheel.accepted = true;
+      }
+    }
     Column {
       anchors.centerIn: parent
       spacing: 2
