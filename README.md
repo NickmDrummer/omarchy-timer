@@ -1,15 +1,83 @@
-# Timer — countdown plugin for Omarchy
+# Looper — timer, pomodoro & alarms for Omarchy
 
-[![Timer preview](preview.png)](https://plugins.omarchy.org/plugin.html?id=nickmdrummer.timer)
+<p align="center">
+  <a href="https://plugins.omarchy.org/plugin.html?id=nickmdrummer.timer">
+    <img src="preview.png" alt="Looper: timer panel and floating card in Original mode" width="82%">
+  </a>
+</p>
 
-*Original mode: custom glass + blur. Omarchy theme mode:*
-
-<img src="preview-omarchy.png" alt="Timer following the Omarchy theme" width="70%">
-
-Countdown pill on the top bar, with a gentle alarm,
-editable presets and an always-on-top floating mode.
+Looper is a small time suite for the top bar: a countdown timer, a Pomodoro
+cycle and weekly alarms in one widget, with an always-on-top floating card and
+real compositor blur.
 
 Listed on the [Omarchy plugin marketplace](https://plugins.omarchy.org/plugin.html?id=nickmdrummer.timer).
+
+## Timer
+
+<p align="center">
+  <img src="timer-running.png" alt="Timer running: pill, panel and floating card" width="72%">
+</p>
+
+- The pill only lights up while a session runs (`TIMER 09:40`); at rest it shows
+  `∞ LOOPER`.
+- Presets (10, 15, 30, 40 min by default) plus a manual H/M/S picker, with
+  `+5` / `−5` that work live while running.
+- Presets can be created, renamed and deleted from the panel (✎).
+- Middle click pauses or resumes; the wheel adjusts time.
+- **Floating card**: a 244×244 glass window that stays on top. Drag it
+  anywhere, pause/stop from the card, or press `↩` to send it back to the bar.
+  Push it against a screen edge to peek a live ghost on the neighboring
+  monitor and release to hop there.
+
+## Pomodoro
+
+<p align="center">
+  <img src="pomodoro-running.png" alt="Pomodoro running: focus phase in the pill, panel and floating card" width="72%">
+</p>
+
+- Focus, short break and long break, with the classic 25 / 5 / 15 minutes and a
+  long break every 4 focus blocks. All durations are editable.
+- Focus and break are visually distinct by design: amber and calm blue in
+  Original, the theme accent and the same calm blue in Omarchy.
+- The cycle dots are both progress and control: click a dot (or use the
+  stacked `+` / `−`) to set how many focus blocks precede the long break.
+- `Skip` and `Restart` sit next to the cycle; auto-start toggles decide
+  whether the next phase begins on its own.
+- Finishing the long break ends the set. The pill keeps the completed count
+  until you start the next one.
+
+## Alarms
+
+<p align="center">
+  <img src="alarms.png" alt="Alarms tab: scheduled alarms with day labels" width="62%">
+</p>
+
+- `Add alarm` opens a 24-hour picker with day chips or a one-click
+  `Every day`, a sound toggle and a short name (up to 20 characters) used in
+  the notification.
+- Each row shows the time, the repeat pattern (`Every day`, `Mon Wed Fri`) and
+  an enable toggle. Click a row to edit or delete it.
+- When alarms fire together, the chime plays once and every alarm still gets
+  its own notification.
+- If the session was suspended and the alarm is more than two minutes late,
+  Looper only posts a `Missed …` notification: no chime for something you
+  already missed.
+
+## Themes
+
+<p align="center">
+  <img src="preview-omarchy.png" alt="The same panel following the Omarchy theme tokens" width="70%">
+</p>
+
+`Theme: Original [toggle] Omarchy` in the panel footer:
+
+- **Original** keeps a custom dark glass that is denser on light themes.
+- **Omarchy** uses the active theme's popup tokens, so the panel looks native
+  and takes the theme's own blur amount.
+
+The alarm and Pomodoro colors are intentionally independent from the theme
+accent, so focus and break never collapse into the same hue on blue, cyan or
+white themes.
 
 ## Install
 
@@ -34,68 +102,53 @@ omarchy plugin remove nickmdrummer.timer --yes
 ```
 
 `--remove` deletes only the marked blur block (with a backup) and reloads
-Hyprland, so your config is left clean. Your presets
+Hyprland, so your config is left clean. Your settings
 (`~/.config/nickmdrummer-timer/presets.json`) are kept.
-
-## Dependencies
-
-All standard on Omarchy, no setup needed:
-
-- `paplay` (or `pw-play`) for the alarm, `notify-send` for the alert,
-  `hyprctl` for monitor layout, `python3` (stdlib only) to generate the chime.
 
 ## Usage
 
-- **Click** the pill: opens the panel.
-- **Middle click**: pause / resume directly.
-- **Mouse wheel** over the pill: ±5 min (idle) or ±1 min (running).
-- **Panel shortcuts**: `space` pause · `+`/`-` adjust ±5 min · `R` reset · `F` float · `Esc` close.
-
-## Features
-
-- Accent-colored pill **only while running**; idle/paused uses the topbar
-  background with an accent border. System typeface (same as the bar).
-  Green heartbeat during the last 5 seconds.
-- 10, 15, 30 and 40 min presets + manual H/M/S picker and +5/−5 buttons
-  (live while running).
-- Presets can be **created, renamed and deleted** from the panel (✎);
-  stored in `~/.config/nickmdrummer-timer/presets.json`:
-
-```json
-{ "version": 1, "presets": [{ "id": "preset-10", "label": "10", "minutes": 10 }] }
-```
-
-- **Floating mode** (⇗ or `F`): a single 244×244 square window with blur,
-  always on top on the screen it was detached from, with start/pause/resume,
-  stop and ↩ to go back to the bar. Click the time to open the panel.
-  Drag the time to move it (the card slides inside a static fullscreen
-  layer with a drag-wide input mask, so dragging never stutters or loses
-  grab; it stays on screen). Push against a screen edge to peek a live
-  ghost on the neighboring monitor, and release to hop there — the real
-  card lands exactly where the ghost was (layer windows live on one
-  output, so the press itself can't travel). The final heartbeat only hits the typeface.
-- **Theme mode** (`Theme: Original [toggle] Omarchy` in the panel):
-  **Original** keeps the custom dark glass; **Omarchy** uses the active
-  theme's popup tokens (native look and the theme's own blur amount).
-  In Original mode the glass gets denser on light themes for contrast.
-- **Alarm**: three-note chime (~3 s) at high volume, three passes +
-  critical notification.
-- Real blur via `timer-hypr.lua` (hook in `~/.config/hypr/hyprland.lua`,
-  reload with `hyprctl reload`): blur + `ignore_alpha 0.3` per namespace,
-  so only the card gets frosted — never the whole desktop or the corners.
-- State syncs across monitors via a private file in
-  `$XDG_RUNTIME_DIR/nickmdrummer-timer/state.json` (0700 dir). If the session
-  has no runtime dir it falls back to `~/.local/state/nickmdrummer-timer`,
-  and the plugin validates ownership and file type before reading it
-  (sync is disabled instead of trusting a foreign path).
+| Action | What it does |
+|---|---|
+| Click the pill | Open the panel |
+| Middle click | Pause / resume |
+| Wheel over the pill | ±5 min at rest, ±1 min while running |
+| Wheel over a stepper | ±1 unit, ±5 with Shift |
+| `space` | Pause / resume |
+| `+` / `-` | Adjust ±5 min |
+| `R` | Reset |
+| `F` | Floating card |
+| `S` | Skip phase (Pomodoro) |
+| `Esc` | Close |
 
 ## Settings
 
 Stored in the bar entry of `~/.config/omarchy/shell.json` and editable from
 the panel footer:
 
-- `sound` — `On` / `Off` for the alarm.
+- `sound` — `On` / `Off` for the chime.
 - `theme` — `Original` (custom dark glass) or `Omarchy` (theme tokens).
+
+Presets, Pomodoro durations and alarms live in
+`~/.config/nickmdrummer-timer/presets.json`:
+
+```json
+{
+  "version": 1,
+  "presets": [{ "id": "preset-10", "label": "10", "minutes": 10 }],
+  "pomodoro": {
+    "focusSec": 1500,
+    "shortSec": 300,
+    "longSec": 900,
+    "cyclesBeforeLong": 4,
+    "autoStartBreaks": true,
+    "autoStartFocus": false
+  },
+  "alarms": [
+    { "id": "a-example", "name": "WAKE UP", "hour": 6, "minute": 0,
+      "days": [1, 2, 3, 4, 5], "sound": true, "enabled": true }
+  ]
+}
+```
 
 ## IPC
 
@@ -103,12 +156,41 @@ the panel footer:
 omarchy-shell nickmdrummer.timer toggle
 omarchy-shell nickmdrummer.timer start 25
 omarchy-shell nickmdrummer.timer stop
+omarchy-shell nickmdrummer.timer mode timer|pomodoro
+omarchy-shell nickmdrummer.timer pomodoro start|pause|resume|skip|reset|stop
 omarchy-shell nickmdrummer.timer detach
 omarchy-shell nickmdrummer.timer attach
 omarchy-shell nickmdrummer.timer hop left|right|up|down
 omarchy-shell nickmdrummer.timer screens
+omarchy-shell nickmdrummer.timer alarmList
+omarchy-shell nickmdrummer.timer alarmAdd '{"name":"GYM","hour":20,"minute":0,"days":[1,3,5],"sound":true}'
+omarchy-shell nickmdrummer.timer alarmEnable <id> true|false
+omarchy-shell nickmdrummer.timer alarmRemove <id>
 omarchy-shell nickmdrummer.timer status
 ```
 
-`screens` prints the logical monitor layout the floating window uses;
-`hop` moves the floating card to the neighboring monitor.
+`screens` prints the logical monitor layout the floating card uses; `hop`
+moves the card to the neighboring monitor. `alarmList` includes the next
+computed occurrence for each alarm.
+
+## Requirements
+
+All standard on Omarchy:
+
+- `paplay` (or `pw-play`) for the chime, `notify-send` for notifications.
+- `hyprctl` for the monitor layout, `python3` (stdlib only) to generate the
+  chime on first use.
+
+## Notes
+
+- Real blur comes from `timer-hypr.lua`: a per-namespace rule with
+  `ignore_alpha 0.3`, so only the card is frosted, never the desktop or the
+  rounded corners.
+- Session state syncs across monitors through
+  `$XDG_RUNTIME_DIR/nickmdrummer-timer/state.json` (0700). Without a runtime
+  dir it falls back to `~/.local/state/nickmdrummer-timer`, and the plugin
+  validates ownership and file type before reading it (sync is disabled
+  instead of trusting a foreign path).
+- Alarms need the shell running; if the shell is closed at the scheduled
+  minute, nothing rings. Missed notifications cover suspend/resume, not a
+  stopped shell.
