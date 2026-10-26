@@ -1110,9 +1110,27 @@ Panel {
                   }
 
                   HoverHandler { id: alarmRowHover }
-                  PanelToolTip {
+                  Rectangle {
+                    id: alarmHint
                     visible: alarmRowHover.hovered
-                    text: "Click to edit"
+                    z: 1000
+                    readonly property real desiredX: alarmRowHover.point.position.x + 12
+                    x: Math.max(2, Math.min(alarmRow.width - width - 2, desiredX))
+                    y: Math.max(2, alarmRowHover.point.position.y - height - 10)
+                    width: hintLabel.implicitWidth + 16
+                    height: hintLabel.implicitHeight + 8
+                    radius: 6
+                    color: Color.tooltip.background
+                    border.width: 1
+                    border.color: Util.alpha(Color.tooltip.border, 0.55)
+                    Text {
+                      id: hintLabel
+                      anchors.centerIn: parent
+                      text: "Click to edit"
+                      color: Color.tooltip.text
+                      font.family: root.face
+                      font.pixelSize: Style.font.bodySmall
+                    }
                   }
 
                   Column {
