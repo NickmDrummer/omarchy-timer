@@ -940,7 +940,15 @@ BarWidget {
   }
   readonly property string phaseLabel: {
     if (root.mode !== "pomodoro") return "TIMER";
+    if (root.phase === "long") return "LONG";
     return root.phase === "focus" ? "FOCUS" : "BREAK";
+  }
+  // Long form for the floating card and tooltips (room to spare there);
+  // the pill keeps the short label so its width stays stable.
+  readonly property string phaseLongLabel: {
+    if (root.mode !== "pomodoro") return "TIMER";
+    if (root.phase === "long") return "LONG BREAK";
+    return root.phaseLabel;
   }
   readonly property string pomoProgress: {
     var cycles = root.pomodoro.cyclesBeforeLong;
@@ -1081,7 +1089,7 @@ BarWidget {
         active: false
         useActiveColor: false
         tooltipText: {
-          var what = root.mode === "pomodoro" ? ("Pomodoro " + root.phaseLabel.toLowerCase() + " " + root.pomoProgress) : "Timer";
+          var what = root.mode === "pomodoro" ? ("Pomodoro " + root.phaseLongLabel.toLowerCase() + " " + root.pomoProgress) : "Timer";
           if (root.tState === "running") return what + " running — click to open, wheel ±1 min";
           if (root.tState === "paused") return what + " paused — click to resume";
           if (root.tState === "finished") return "Time's up! Click to dismiss";

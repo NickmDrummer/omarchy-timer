@@ -179,7 +179,7 @@ PanelWindow {
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
-        text: (host && host.mode === "pomodoro") ? (host.phaseLabel + " · " + host.pomoProgress) : "TIMER"
+        text: (host && host.mode === "pomodoro") ? (host.phaseLongLabel + " · " + host.pomoProgress) : "TIMER"
         color: (host && host.mode === "pomodoro") ? Util.alpha(host.phaseAccent, 0.85) : Util.alpha(root.ink, 0.5)
         font.family: root.face
         font.pixelSize: Style.font.caption
