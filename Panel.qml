@@ -21,6 +21,14 @@ Panel {
 
   readonly property bool omarchyTheme: hostWidget ? hostWidget.omarchyTheme === true : false
   readonly property bool pomodoroMode: hostWidget ? hostWidget.mode === "pomodoro" : false
+  // Panel tab (UI only): alarms are a schedule, not a running mode.
+  property string panelTab: "timer"
+  readonly property bool alarmsMode: root.panelTab === "alarms"
+  readonly property var tabModel: [
+    { key: "timer", label: "TIMER" },
+    { key: "pomodoro", label: "POMODORO" },
+    { key: "alarms", label: "ALARMS" }
+  ]
   readonly property bool lightTheme: hostWidget ? hostWidget.lightTheme === true : false
   // Original mode has its own palette (white ink over dark glass) so it keeps
   // the same identity on light themes; Omarchy mode follows theme tokens.
@@ -40,10 +48,85 @@ Panel {
   // Manual picker (seconds). Synced on open.
   property int pickSec: 600
 
+  // ---- alarm editor state -----------------------------------------------
+  property bool alarmEditing: false
+  property string alarmEditId: ""
+  property string alarmName: ""
+  property int alarmHour: 8
+  property int alarmMinute: 0
+  property var alarmDays: [1, 2, 3, 4, 5]
+  property bool alarmSound: true
+  property bool alarmEveryDay: false
+
+  function pad2(n) { return (Number(n) < 10 ? "0" : "") + Number(n); }
+
+  function openAlarmEditor(alarm) {
+    root.alarmEditing = true;
+    if (alarm) {
+      root.alarmEditId = String(alarm.id);
+      root.alarmName = String(alarm.name || "");
+      root.alarmHour = Number(alarm.hour) || 0;
+      root.alarmMinute = Number(alarm.minute) || 0;
+      root.alarmDays = (alarm.days || []).slice();
+      root.alarmSound = alarm.sound !== false;
+    } else {
+      var now = new Date();
+      root.alarmEditId = "";
+      root.alarmName = "";
+      root.alarmHour = (now.getHours() + 1) % 24;
+      root.alarmMinute = 0;
+      root.alarmDays = [1, 2, 3, 4, 5];
+      root.alarmSound = true;
+    }
+    root.alarmEveryDay = root.alarmDays.length === 7;
+  }
+
+  function closeAlarmEditor() {
+    root.alarmEditing = false;
+    root.alarmEditId = "";
+  }
+
+  function toggleAlarmDay(d) {
+    if (root.alarmEveryDay) return;
+    var list = (root.alarmDays || []).slice();
+    var i = list.indexOf(d);
+    if (i >= 0) list.splice(i, 1);
+    else list.push(d);
+    list.sort(function(a, b) { return a - b; });
+    if (list.length === 0) list = [d];
+    root.alarmDays = list;
+  }
+
+  function setEveryDay(on) {
+    root.alarmEveryDay = on === true;
+    if (root.alarmEveryDay) root.alarmDays = [0, 1, 2, 3, 4, 5, 6];
+  }
+
+  function saveAlarm() {
+    if (!hostWidget) return;
+    var days = root.alarmEveryDay ? [0, 1, 2, 3, 4, 5, 6] : root.alarmDays;
+    var payload = {
+      name: root.alarmName,
+      hour: root.alarmHour,
+      minute: root.alarmMinute,
+      days: days,
+      sound: root.alarmSound
+    };
+    if (root.alarmEditId !== "") hostWidget.updateAlarm(root.alarmEditId, payload);
+    else hostWidget.addAlarm(payload);
+    root.closeAlarmEditor();
+  }
+
+  function deleteAlarm() {
+    if (hostWidget && root.alarmEditId !== "") hostWidget.removeAlarm(root.alarmEditId);
+    root.closeAlarmEditor();
+  }
+
   function open() {
     root.pickSec = hostWidget ? hostWidget.stagedSec : 600;
     root.editing = false;
     root.editId = "";
+    root.panelTab = (hostWidget && hostWidget.mode === "pomodoro") ? "pomodoro" : "timer";
     root.controller.show();
     Qt.callLater(function() { keyCatcher.forceActiveFocus(); });
   }
@@ -147,13 +230,10 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(4)
             Repeater {
-              model: [
-                { key: "timer", label: "TIMER" },
-                { key: "pomodoro", label: "POMODORO" }
-              ]
+              model: root.tabModel
               Rectangle {
                 required property var modelData
-                readonly property bool activeTab: root.pomodoroMode === (modelData.key === "pomodoro")
+                readonly property bool activeTab: root.panelTab === modelData.key
                 width: tabLabel.implicitWidth + 20
                 height: Style.space(26)
                 radius: height / 2
@@ -177,7 +257,9 @@ Panel {
                     if (!hostWidget) return;
                     root.editing = false;
                     root.editId = "";
-                    hostWidget.setMode(modelData.key);
+                    root.closeAlarmEditor();
+                    root.panelTab = modelData.key;
+                    if (modelData.key !== "alarms") hostWidget.setMode(modelData.key);
                   }
                 }
               }
@@ -208,6 +290,7 @@ Panel {
         // ---- big time + progress + heartbeat ---------------------------
         Rectangle {
           id: timeCard
+          visible: !root.alarmsMode
           width: parent.width
           height: 118
           radius: 16
@@ -307,6 +390,7 @@ Panel {
         // ---- transport ----------------------------------------------
         // Exact widths: 2 large + 2 small of 46 + 3 gaps of 8 = width.
         Row {
+          visible: !root.alarmsMode
           width: parent.width
           spacing: Style.space(8)
 
@@ -367,7 +451,7 @@ Panel {
           id: timerView
           width: parent.width
           spacing: Style.space(12)
-          visible: !root.pomodoroMode
+          visible: root.panelTab === "timer"
           opacity: visible ? 1 : 0
           x: visible ? 0 : -6
           Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
@@ -700,7 +784,7 @@ Panel {
           id: pomoView
           width: parent.width
           spacing: Style.space(12)
-          visible: root.pomodoroMode
+          visible: root.panelTab === "pomodoro"
           opacity: visible ? 1 : 0
           x: visible ? 0 : 6
           Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
@@ -863,6 +947,306 @@ Panel {
             color: Util.alpha(root.fg, 0.45)
             font.family: root.face
             font.pixelSize: Style.font.caption
+          }
+        }
+
+        // ---- alarms --------------------------------------------------------
+        // Default view is the list; ADD swaps it for the editor in place.
+        Column {
+          id: alarmsView
+          width: parent.width
+          spacing: Style.space(12)
+          visible: root.panelTab === "alarms"
+
+          Column {
+            width: parent.width
+            spacing: Style.space(10)
+            visible: !root.alarmEditing
+
+            TimerButton {
+              width: parent.width
+              label: "＋  Add alarm"
+              primary: true
+              fg: root.fg
+              face: root.face
+              onFired: root.openAlarmEditor(null)
+            }
+
+            Text {
+              width: parent.width
+              visible: !hostWidget || hostWidget.alarms.length === 0
+              horizontalAlignment: Text.AlignHCenter
+              topPadding: Style.space(8)
+              text: "No alarms yet"
+              color: Util.alpha(root.fg, 0.45)
+              font.family: root.face
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Repeater {
+              model: hostWidget ? hostWidget.alarms : []
+              Column {
+                required property var modelData
+                required property int index
+                width: alarmsView.width
+                spacing: Style.space(8)
+
+                Rectangle {
+                  width: parent.width
+                  height: 1
+                  visible: index > 0
+                  color: root.ink(0.10)
+                }
+
+                Item {
+                  width: alarmsView.width
+                  height: Math.max(74, alarmRowInfo.implicitHeight)
+
+                  Column {
+                    id: alarmRowInfo
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    width: parent.width - 46
+                    spacing: 2
+
+                    Text {
+                      width: alarmRowInfo.width
+                      text: modelData.name
+                      elide: Text.ElideRight
+                      color: Util.alpha(root.fg, 0.62)
+                      font.family: root.face
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                      font.letterSpacing: 1.2
+                    }
+                    Text {
+                      text: root.pad2(modelData.hour) + ":" + root.pad2(modelData.minute)
+                      color: Util.alpha(root.fg, modelData.enabled ? 1.0 : 0.45)
+                      font.family: root.face
+                      font.pixelSize: Style.font.display
+                      font.bold: true
+                    }
+                    Text {
+                      width: alarmRowInfo.width
+                      text: Logic.alarmRepeatLabel(modelData.days)
+                      elide: Text.ElideRight
+                      color: Util.alpha(root.fg, 0.45)
+                      font.family: root.face
+                      font.pixelSize: Style.font.caption
+                    }
+
+                    // Tapping the text block (never the toggle) edits the alarm.
+                    MouseArea {
+                      anchors.fill: parent
+                      acceptedButtons: Qt.LeftButton
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.openAlarmEditor(modelData)
+                    }
+                  }
+
+                  ToggleRow {
+                    id: alarmRowToggle
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 36
+                    height: Style.space(20)
+                    on: modelData.enabled
+                    fg: root.fg
+                    face: root.face
+                    onToggled: function(v) { if (hostWidget) hostWidget.setAlarmEnabled(modelData.id, v); }
+                  }
+                }
+
+              }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(10)
+            visible: root.alarmEditing
+
+            Text {
+              width: parent.width
+              text: root.alarmEditId === "" ? "NEW ALARM" : "EDIT ALARM"
+              color: Util.alpha(root.fg, 0.6)
+              font.family: root.face
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1.4
+            }
+
+            Text {
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              text: root.pad2(root.alarmHour) + ":" + root.pad2(root.alarmMinute)
+              color: root.fg
+              font.family: root.face
+              font.pixelSize: 44
+              font.bold: true
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+              Stepper {
+                title: "HRS"
+                width: (parent.width - Style.space(8)) / 2
+                value: root.alarmHour
+                min: 0
+                max: 23
+                fg: root.fg
+                face: root.face
+                onChanged: function(v) { root.alarmHour = v; }
+              }
+              Stepper {
+                title: "MIN"
+                width: (parent.width - Style.space(8)) / 2
+                value: root.alarmMinute
+                min: 0
+                max: 59
+                fg: root.fg
+                face: root.face
+                onChanged: function(v) { root.alarmMinute = v; }
+              }
+            }
+
+            Rectangle {
+              width: parent.width
+              height: Style.space(32)
+              radius: Style.cornerRadius
+              color: root.omarchyTheme ? root.ink(0.05) : Qt.rgba(0, 0, 0, 0.5)
+              border.width: 1
+              border.color: root.ink(alarmNameInput.activeFocus ? 0.35 : 0.14)
+              TextInput {
+                id: alarmNameInput
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                verticalAlignment: TextInput.AlignVCenter
+                text: root.alarmName
+                maximumLength: 10
+                color: root.fg
+                font.family: root.face
+                font.pixelSize: Style.font.body
+                font.capitalization: Font.AllUppercase
+                selectByMouse: true
+                onTextEdited: root.alarmName = text.toUpperCase()
+              }
+              Text {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                verticalAlignment: Text.AlignVCenter
+                visible: root.alarmName === "" && !alarmNameInput.activeFocus
+                text: "Name…"
+                color: Util.alpha(root.fg, 0.4)
+                font.family: root.face
+                font.pixelSize: Style.font.body
+              }
+            }
+
+            Row {
+              width: parent.width
+              Text {
+                width: parent.width - 46
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Every day"
+                color: Util.alpha(root.fg, 0.75)
+                font.family: root.face
+                font.pixelSize: Style.font.bodySmall
+              }
+              ToggleRow {
+                width: 36
+                height: Style.space(20)
+                on: root.alarmEveryDay
+                fg: root.fg
+                face: root.face
+                onToggled: function(v) { root.setEveryDay(v); }
+              }
+            }
+
+            Row {
+              id: alarmDayRow
+              width: parent.width
+              spacing: Style.space(4)
+              Repeater {
+                model: Logic.ALARM_DAYS
+                Rectangle {
+                  required property var modelData
+                  required property int index
+                  readonly property bool selected: root.alarmDays.indexOf(index) >= 0
+                  width: (alarmDayRow.width - Style.space(4) * 6) / 7
+                  height: Style.space(30)
+                  radius: height / 2
+                  color: selected ? root.ink(0.18) : "transparent"
+                  border.width: 1
+                  border.color: selected ? root.ink(0.35) : root.ink(0.12)
+                  opacity: root.alarmEveryDay ? 0.4 : 1
+                  Text {
+                    anchors.centerIn: parent
+                    text: modelData
+                    color: selected ? root.fg : Util.alpha(root.fg, 0.5)
+                    font.family: root.face
+                    font.pixelSize: Style.font.caption
+                    font.bold: selected
+                  }
+                  HoverHandler { cursorShape: Qt.PointingHandCursor }
+                  TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: if (!root.alarmEveryDay) root.toggleAlarmDay(index)
+                  }
+                }
+              }
+            }
+
+            Row {
+              width: parent.width
+              Text {
+                width: parent.width - 46
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Sound"
+                color: Util.alpha(root.fg, 0.75)
+                font.family: root.face
+                font.pixelSize: Style.font.bodySmall
+              }
+              ToggleRow {
+                width: 36
+                height: Style.space(20)
+                on: root.alarmSound
+                fg: root.fg
+                face: root.face
+                onToggled: function(v) { root.alarmSound = v; }
+              }
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+              TimerButton {
+                width: (parent.width - Style.space(16)) / 3
+                label: "Save"
+                primary: true
+                fg: root.fg
+                face: root.face
+                onFired: root.saveAlarm()
+              }
+              TimerButton {
+                width: (parent.width - Style.space(16)) / 3
+                label: "Delete"
+                danger: true
+                visible: root.alarmEditId !== ""
+                fg: root.fg
+                face: root.face
+                onFired: root.deleteAlarm()
+              }
+              TimerButton {
+                width: (parent.width - Style.space(16)) / 3
+                label: "Cancel"
+                fg: root.fg
+                face: root.face
+                onFired: root.closeAlarmEditor()
+              }
+            }
           }
         }
 
