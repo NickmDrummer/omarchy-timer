@@ -128,7 +128,7 @@ function clampAlarmMinute(m) {
 }
 
 function alarmName(raw) {
-  return String(raw || "").trim().slice(0, 10).toUpperCase();
+  return String(raw || "").trim().slice(0, 20).trim().toUpperCase();
 }
 
 // QML hands nested arrays over as list-like objects, where Array.isArray is

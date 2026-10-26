@@ -1248,7 +1248,7 @@ Panel {
                 anchors.rightMargin: 10
                 verticalAlignment: TextInput.AlignVCenter
                 text: root.alarmName
-                maximumLength: 10
+                maximumLength: 20
                 color: root.fg
                 font.family: root.face
                 font.pixelSize: Style.font.body
