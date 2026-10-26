@@ -996,7 +996,6 @@ Panel {
               width: (parent.width - Style.space(8)) / 2
               spacing: Style.space(6)
               Text {
-                width: parent.width - 42
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Auto-start focus"
                 color: Util.alpha(root.fg, 0.75)
@@ -1017,7 +1016,6 @@ Panel {
               width: (parent.width - Style.space(8)) / 2
               spacing: Style.space(6)
               Text {
-                width: parent.width - 42
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Auto-start break"
                 color: Util.alpha(root.fg, 0.75)
