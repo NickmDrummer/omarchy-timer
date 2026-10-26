@@ -990,40 +990,48 @@ Panel {
 
           Row {
             width: parent.width
-            Text {
-              width: parent.width - 46
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Auto-start breaks"
-              color: Util.alpha(root.fg, 0.75)
-              font.family: root.face
-              font.pixelSize: Style.font.bodySmall
+            spacing: Style.space(8)
+
+            Row {
+              width: (parent.width - Style.space(8)) / 2
+              spacing: Style.space(6)
+              Text {
+                width: parent.width - 42
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Auto-start focus"
+                color: Util.alpha(root.fg, 0.75)
+                font.family: root.face
+                font.pixelSize: Style.font.bodySmall
+              }
+              ToggleRow {
+                width: 36
+                height: Style.space(20)
+                on: hostWidget ? hostWidget.pomodoro.autoStartFocus : false
+                fg: root.fg
+                face: root.face
+                onToggled: function(v) { if (hostWidget) hostWidget.updatePomodoro({ autoStartFocus: v }); }
+              }
             }
-            ToggleRow {
-              width: 36
-              height: Style.space(20)
-              on: hostWidget ? hostWidget.pomodoro.autoStartBreaks : true
-              fg: root.fg
-              face: root.face
-              onToggled: function(v) { if (hostWidget) hostWidget.updatePomodoro({ autoStartBreaks: v }); }
-            }
-          }
-          Row {
-            width: parent.width
-            Text {
-              width: parent.width - 46
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Auto-start focus"
-              color: Util.alpha(root.fg, 0.75)
-              font.family: root.face
-              font.pixelSize: Style.font.bodySmall
-            }
-            ToggleRow {
-              width: 36
-              height: Style.space(20)
-              on: hostWidget ? hostWidget.pomodoro.autoStartFocus : false
-              fg: root.fg
-              face: root.face
-              onToggled: function(v) { if (hostWidget) hostWidget.updatePomodoro({ autoStartFocus: v }); }
+
+            Row {
+              width: (parent.width - Style.space(8)) / 2
+              spacing: Style.space(6)
+              Text {
+                width: parent.width - 42
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Auto-start break"
+                color: Util.alpha(root.fg, 0.75)
+                font.family: root.face
+                font.pixelSize: Style.font.bodySmall
+              }
+              ToggleRow {
+                width: 36
+                height: Style.space(20)
+                on: hostWidget ? hostWidget.pomodoro.autoStartBreaks : true
+                fg: root.fg
+                face: root.face
+                onToggled: function(v) { if (hostWidget) hostWidget.updatePomodoro({ autoStartBreaks: v }); }
+              }
             }
           }
 
