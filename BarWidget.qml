@@ -970,10 +970,15 @@ BarWidget {
   // Accent fill ONLY while the timer is active (running). Idle/paused use
   // the topbar background (slightly darker on light themes) and no border;
   // Omarchy mode drops the glass entirely, like a native bar widget.
+  // Pomodoro phases in Original mode use the SOLID accent: at 0.55 alpha
+  // over the dark bar the amber read as #8a6706 instead of #f4b400.
   readonly property color pillBg: {
     if (root.tState === "finished") return Util.alpha(root.bar ? root.bar.urgent : Color.urgent, 0.62);
     if (root.urgentPhase) return Qt.rgba(0.10, 0.45, 0.24, 0.78);
-    if (root.tState === "running") return Util.alpha(root.phaseAccent, 0.55);
+    if (root.tState === "running") {
+      if (!root.omarchyTheme && root.mode === "pomodoro") return root.phaseAccent;
+      return Util.alpha(root.phaseAccent, 0.55);
+    }
     if (root.omarchyTheme) return "transparent";
     if (root.lightTheme) return root.shade(root.topbarBg, 0.10);
     return root.topbarBg;
