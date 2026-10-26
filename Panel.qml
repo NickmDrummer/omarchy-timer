@@ -70,6 +70,7 @@ Panel {
       var what = hostWidget.phase === "focus" ? ("Focus " + hostWidget.pomoProgress) : (hostWidget.phase === "long" ? "Long break" : "Short break");
       if (hostWidget.tState === "running") return what + " · running";
       if (hostWidget.tState === "paused") return what + " · paused";
+      if (hostWidget.pomoDone >= hostWidget.pomodoro.cyclesBeforeLong) return "Set complete · Start begins a new set";
       return "Ready · focus " + Logic.fmtLong(hostWidget.pomodoro.focusSec) + ", long break every " + hostWidget.pomodoro.cyclesBeforeLong;
     }
     if (hostWidget.tState === "running") return "Running · ends in " + Logic.fmtLong(hostWidget.remainingSec);

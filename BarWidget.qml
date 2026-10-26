@@ -400,14 +400,24 @@ BarWidget {
   }
 
   // A phase reached zero on the driving instance: chime, notify, advance.
+  // A finished long break ends the whole set (idle) instead of staging a
+  // new focus: Start begins the next set, like everywhere else.
   function completePhase() {
     var cfg = root.pomodoro;
     var ended = root.phase;
+    if (ended === "long") {
+      root.alarmTitle = "Pomodoro";
+      root.alarmBody = "Set complete — " + cfg.cyclesBeforeLong + " focus blocks done";
+      root.alarmUrgency = "critical";
+      if (root.soundOn) alarmProc.running = true;
+      else notifyProc.running = true;
+      root.endPomodoroSet();
+      return;
+    }
     if (ended === "focus") root.pomoDone = Math.min(cfg.cyclesBeforeLong, root.pomoDone + 1);
     var next;
     if (ended === "focus") next = (root.pomoDone >= cfg.cyclesBeforeLong) ? "long" : "short";
     else next = "focus";
-    if (ended === "long") root.pomoDone = 0;
     var auto = (next === "focus") ? cfg.autoStartFocus : cfg.autoStartBreaks;
     var mins = Math.round(root.phaseSeconds(next) / 60);
     root.alarmTitle = "Pomodoro";
@@ -423,14 +433,30 @@ BarWidget {
     root.enterPhase(next, auto);
   }
 
+  // The set is over: back to an idle focus, keeping the completed count so
+  // the panel can announce it until the next set starts.
+  function endPomodoroSet() {
+    finishCalm.stop();
+    root.phase = "focus";
+    root.pomoDone = root.pomodoro.cyclesBeforeLong;
+    root.stagedSec = root.pomodoro.focusSec;
+    root.totalSec = root.stagedSec;
+    root.remainingSec = root.stagedSec;
+    root.endAt = 0;
+    root.tState = "idle";
+    root.writeState();
+  }
+
   // Skip advances without ringing; an early skipped focus block does not
   // count as completed, so the set does not move forward either.
+  // Skipping the long break ends the set, like finishing it.
   function skipPhase() {
     if (root.mode !== "pomodoro") return;
     if (root.phase === "focus") {
       root.enterPhase(root.pomoDone >= root.pomodoro.cyclesBeforeLong ? "long" : "short", false);
+    } else if (root.phase === "long") {
+      root.endPomodoroSet();
     } else {
-      if (root.phase === "long") root.pomoDone = 0;
       root.enterPhase("focus", false);
     }
   }
