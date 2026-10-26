@@ -1198,7 +1198,9 @@ BarWidget {
     if (root.tState === "finished") return Util.alpha(root.bar ? root.bar.urgent : Color.urgent, 0.62);
     if (root.urgentPhase) return Qt.rgba(0.10, 0.45, 0.24, 0.78);
     if (root.tState === "running") {
-      if (!root.omarchyTheme && root.mode === "pomodoro") return root.phaseAccent;
+      // Solid in Original for every function: at 0.55 alpha the amber/blue
+      // read as muddy (#8a6706 / #14598a) against the dark bar.
+      if (!root.omarchyTheme) return root.phaseAccent;
       return Util.alpha(root.phaseAccent, 0.55);
     }
     if (root.omarchyTheme) return "transparent";
