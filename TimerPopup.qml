@@ -202,8 +202,18 @@ PanelWindow {
   // parallel axis (along the bar) the anchor item's reported position is
   // still consistent with the bar content origin, so it's accurate for
   // centering the card under the icon.
-  readonly property real barW: anchorWindow ? anchorWindow.width : screenW
-  readonly property real barH: anchorWindow ? anchorWindow.height : 0
+  // Bar thickness (painted strip), NOT the bar window size: since 4.5 the
+  // bar surface spans its whole screen, so anchorWindow.width/height equal
+  // screenW/screenH. Use the per-screen thickness the shell publishes.
+  readonly property real barThickness: {
+    if (!bar) return 0
+    if (screen && typeof bar.barSizeFor === "function") {
+      try { return Number(bar.barSizeFor(screen.name)) || 0 } catch (e) {}
+    }
+    return Number(bar.barSize) || 0
+  }
+  readonly property real barW: (root.barPos === "left" || root.barPos === "right") ? root.barThickness : screenW
+  readonly property real barH: (root.barPos === "top" || root.barPos === "bottom") ? root.barThickness : screenH
   readonly property point cardOrigin: {
     if (!anchorItem || !bar) return Qt.point(margin, margin)
     var x = 0, y = 0
