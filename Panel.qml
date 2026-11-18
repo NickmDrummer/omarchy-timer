@@ -60,6 +60,22 @@ Panel {
 
   function pad2(n) { return (Number(n) < 10 ? "0" : "") + Number(n); }
 
+  // Native TextInputs stay read-only: QQuickTextInput::canPaste() reads
+  // QMimeData::text() for writable fields on Qt 6.12, which lets a foreign
+  // selection stall the shell. Editing is done here instead, from key events.
+  function keyEdit(current, event, maxLen, upper) {
+    var t = String(current || "");
+    if (event.key === Qt.Key_Backspace) t = t.slice(0, Math.max(0, t.length - 1));
+    else if (event.key === Qt.Key_Space) {
+      if (t.length >= maxLen) return current;
+      t += " ";
+    } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32) {
+      if (t.length >= maxLen) return current;
+      t += event.text;
+    } else return current;
+    return upper ? t.toUpperCase() : t;
+  }
+
   function openAlarmEditor(alarm) {
     root.alarmEditing = true;
     if (alarm) {
@@ -205,7 +221,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: newLabelInput.activeFocus || editLabelInput.activeFocus
+      blocked: newLabelInput.activeFocus || editLabelInput.activeFocus || alarmNameInput.activeFocus
       onCloseRequested: root.close()
       onActivateRequested: if (hostWidget) hostWidget.togglePause()
       onTabRequested: function(dir) { root.switchPanel(dir); }
@@ -574,8 +590,15 @@ Panel {
                   color: root.fg
                   font.family: root.face
                   font.pixelSize: Style.font.body
-                  selectByMouse: true
-                  onTextEdited: root.editLabel = text
+                  readOnly: true
+                  activeFocusOnPress: true
+                  Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Space
+                        || (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32)) {
+                      root.editLabel = root.keyEdit(root.editLabel, event, 12, false);
+                      event.accepted = true;
+                    }
+                  }
                 }
               }
               Stepper {
@@ -659,8 +682,15 @@ Panel {
                   color: root.fg
                   font.family: root.face
                   font.pixelSize: Style.font.body
-                  selectByMouse: true
-                  onTextEdited: root.newLabel = text
+                  readOnly: true
+                  activeFocusOnPress: true
+                  Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Space
+                        || (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32)) {
+                      root.newLabel = root.keyEdit(root.newLabel, event, 12, false);
+                      event.accepted = true;
+                    }
+                  }
                 }
                 Text {
                   anchors.fill: parent
@@ -1253,8 +1283,15 @@ Panel {
                 font.family: root.face
                 font.pixelSize: Style.font.body
                 font.capitalization: Font.AllUppercase
-                selectByMouse: true
-                onTextEdited: root.alarmName = text.toUpperCase()
+                readOnly: true
+                activeFocusOnPress: true
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Space
+                      || (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32)) {
+                    root.alarmName = root.keyEdit(root.alarmName, event, 20, true);
+                    event.accepted = true;
+                  }
+                }
               }
               Text {
                 anchors.fill: parent
